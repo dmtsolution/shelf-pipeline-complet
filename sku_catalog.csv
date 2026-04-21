@@ -1,0 +1,121 @@
+sku_id,category,brand,product_name,capacity,emballage,saveur
+coca_cola_original_45cl,soda,coca,coca cola original,45cl,bouteille_plastique,original
+coca_cola_original_33cl,soda,coca,coca cola original,33cl,bouteille_plastique,original
+coca_cola_original_25cl,soda,coca,coca cola original,25cl,bouteille_plastique,original
+coca_cola_original_1l,soda,coca,coca cola original,1l,bouteille_plastique,original
+coca_cola_original_1_5l,soda,coca,coca cola original,1.5l,bouteille_plastique,original
+coca_cola_original_2l,soda,coca,coca cola original,2l,bouteille_plastique,original
+coca_cola_original_33cl_can,soda,coca,coca cola original,33cl,canette_metal,original
+coca_cola_zero_33cl_can,soda,coca,coca cola zero sucres,33cl,canette_metal,zero
+coca_cola_zero_45cl,soda,coca,coca cola zero sucres,45cl,bouteille_plastique,zero
+coca_cola_zero_1l,soda,coca,coca cola zero sucres,1l,bouteille_plastique,zero
+coca_cola_original_25cl_can,soda,coca,coca cola original,25cl,canette_metal,original
+coca_cola_zero_25cl_can,soda,coca,coca cola zero sucres,25cl,canette_metal,zero
+hawaii_tropical_25cl_can,soda,coca,hawaii tropical,25cl,canette_metal,tropical
+hawaii_ananas_25cl_can,soda,coca,hawaii ananas,25cl,canette_metal,ananas
+hawaii_tropical_33cl_can,soda,coca,hawaii tropical,33cl,canette_metal,tropical
+hawaii_tropical_25cl_bottle,soda,coca,hawaii tropical,25cl,bouteille_plastique,tropical
+hawaii_tropical_33cl_bottle,soda,coca,hawaii tropical,33cl,bouteille_plastique,tropical
+hawaii_tropical_45cl_bottle,soda,coca,hawaii tropical,45cl,bouteille_plastique,tropical
+hawaii_tropical_1l_bottle,soda,coca,hawaii tropical,1l,bouteille_plastique,tropical
+hawaii_tropical_1_5l_bottle,soda,coca,hawaii tropical,1.5l,bouteille_plastique,tropical
+hawaii_tropical_2l_bottle,soda,coca,hawaii tropical,2l,bouteille_plastique,tropical
+hawaii_ananas_45cl_bottle,soda,coca,hawaii ananas,45cl,bouteille_plastique,ananas
+hawaii_ananas_1l_bottle,soda,coca,hawaii ananas,1l,bouteille_plastique,ananas
+hawaii_ananas_1_5l_bottle,soda,coca,hawaii ananas,1.5l,bouteille_plastique,ananas
+sprite_citron_25cl_can,soda,coca,sprite,25cl,canette_metal,citron
+sprite_citron_33cl_can,soda,coca,sprite,33cl,canette_metal,citron
+sprite_citron_25cl_bottle,soda,coca,sprite,25cl,bouteille_plastique,citron
+sprite_citron_45cl_bottle,soda,coca,sprite,45cl,bouteille_plastique,citron
+sprite_citron_1l_bottle,soda,coca,sprite,1l,bouteille_plastique,citron
+sprite_citron_1_5l_bottle,soda,coca,sprite,1.5l,bouteille_plastique,citron
+fanta_orange_25cl_can,soda,coca,fanta,25cl,canette_metal,orange
+fanta_lemon_25cl_can,soda,coca,fanta,25cl,canette_metal,lemon
+fanta_orange_25cl_bottle,soda,coca,fanta,25cl,bouteille_plastique,orange
+fanta_orange_33cl_bottle,soda,coca,fanta,33cl,bouteille_plastique,orange
+fanta_lemon_33cl_bottle,soda,coca,fanta,33cl,bouteille_plastique,lemon
+fanta_lemon_1_5l_bottle,soda,coca,fanta,1.5l,bouteille_plastique,lemon
+schweppes_gold_ananas_25cl_can,soda,coca,schweppes,25cl,canette_metal,gold_ananas
+schweppes_tonic_33cl_can,soda,coca,schweppes,33cl,canette_metal,tonic
+schweppes_citron_33cl_can,soda,coca,schweppes,33cl,canette_metal,citron
+schweppes_citron_45cl_bottle,soda,coca,schweppes,45cl,bouteille_plastique,citron
+schweppes_citron_90cl_bottle,soda,coca,schweppes,90cl,bouteille_plastique,citron
+cappy_pulpy_orange_25cl_bottle,jus,coca,cappy pulpy,25cl,bouteille_plastique,orange
+cappy_pulpy_peche_25cl_bottle,jus,coca,cappy pulpy,25cl,bouteille_plastique,peche
+cappy_pulpy_orange_1l_bottle,jus,coca,cappy pulpy,1l,bouteille_plastique,orange
+aquarius_citron_50cl_bottle,soda,coca,aquarius,50cl,bouteille_plastique,citron
+aquarius_orange_50cl_bottle,soda,coca,aquarius,50cl,bouteille_plastique,orange
+schweppes_tonic_90cl_bottle,soda,coca,schweppes,90cl,bouteille_plastique,tonic
+fanta_tropical_1_5l_bottle,soda,coca,fanta,1.5l,bouteille_plastique,tropical
+fanta_pomme_1_5l_bottle,soda,coca,fanta,1.5l,bouteille_plastique,pomme
+schweppes_tonic_45cl_bottle,soda,coca,schweppes,45cl,bouteille_plastique,tonic
+cappy_pulpy_peche_1l_bottle,jus,coca,cappy pulpy,1l,bouteille_plastique,peche
+salim_lait_entier_500ml_brique,lait,danone,salim lait uht,500ml,brique,nature
+salim_lait_entier_1l_brique,lait,danone,salim lait uht,1l,brique,nature
+danone_cereales_110g_pot,yaourt,danone,danone cereales,110g,pot_plastique,cereales
+danone_cereales_0_110g_pot,yaourt,danone,danone cereales 0%,110g,pot_plastique,cereales
+danone_ananas_coco_0_110g_pot,yaourt,danone,danone ananas coco 0%,110g,pot_plastique,ananas_coco
+danone_cerise_0_110g_pot,yaourt,danone,danone cerise 0%,110g,pot_plastique,cerise
+danone_nature_sans_sucre_110g_pot,yaourt,danone,danone nature sans sucre,110g,pot_plastique,nature
+danone_assil_banane_110g_pot,yaourt,danone,danone assil banane,110g,pot_plastique,banane
+danone_assil_vanille_110g_pot,yaourt,danone,danone assil vanille,110g,pot_plastique,vanille
+danone_assil_peche_110g_pot,yaourt,danone,danone assil peche,110g,pot_plastique,peche
+danone_assil_ananas_110g_pot,yaourt,danone,danone assil ananas,110g,pot_plastique,ananas
+danone_veloute_fraise_110g_pot,yaourt,danone,danone veloute fraise,110g,pot_plastique,fraise
+danone_veloute_melon_peche_110g_pot,yaourt,danone,danone veloute melon peche,110g,pot_plastique,melon_peche
+danone_veloute_fruits_exotiques_110g_pot,yaourt,danone,danone veloute fruits exotiques,110g,pot_plastique,fruits_exotiques
+danone_yaourt_brasse_vanille_480g_pot,yaourt,danone,danone yaourt brasse vanille,480g,pot_plastique,vanille
+activia_cereales_110g_pot,yaourt,danone,activia cereales,110g,pot_plastique,cereales
+activia_selection_ananas_passion_90g_pot,yaourt,danone,activia selection ananas passion,90g,pot_plastique,ananas_passion
+danone_yaourt_brasse_nature_sans_sucre_480g_pot,yaourt,danone,danone yaourt brasse nature sans sucre,480g,pot_plastique,nature
+activia_selection_grenade_framboise_90g,yaourt,danone,activia selection,90g,pot_plastique,grenade framboise
+activia_ananas_fraise_240g_bottle,yaourt,danone,activia a boire,240g,bouteille_plastique,ananas_fraise
+activia_nature_sucre_240g_bottle,yaourt,danone,activia a boire,240g,bouteille_plastique,nature
+danone_mangue_ananas_0_250g_bottle,yaourt,danone,danone 0% a boire,250g,bouteille_plastique,mangue_ananas
+danone_pomme_kiwi_0_250g_bottle,yaourt,danone,danone 0% a boire,250g,bouteille_plastique,pomme_kiwi
+danone_fraise_orange_240g_bottle,yaourt,danone,danone a boire,240g,bouteille_plastique,fraise_orange
+danone_peche_abricot_240g_bottle,yaourt,danone,danone a boire,240g,bouteille_plastique,peche_abricot
+danone_danette_caramel_80g_pot,dessert,danone,danette dessert,80g,pot_plastique,caramel
+danone_danette_chocolat_80g_pot,dessert,danone,danette dessert,80g,pot_plastique,chocolat
+danone_danette_mhallabia_80g_pot,dessert,danone,danette mhallabia,80g,pot_plastique,mhallabia
+danone_danette_pannacotta_framboise_vanille_80g_pot,dessert,danone,danette panna cotta,80g,pot_plastique,framboise_vanille
+danone_danette_flancaramel_80g_pot,dessert,danone,danette flan,80g,pot_plastique,caramel
+danone_jamila_grenade_165g_pot,yaourt,danone,jamila original,165g,pot_plastique,grenadine
+danone_jamila_grenadine_220g_pot,yaourt,danone,jamila original,220g,pot_plastique,grenadine
+danone_jamila_maxi_grenadine_440g_brique,yaourt,danone,jamila maxi,440g,brique,grenadine
+danone_max_vanille_250g_bottle,yaourt,danone,danone max,250g,bouteille_plastique,vanille
+danone_max_fruits_rouges_250g_bottle,yaourt,danone,danone max,250g,bouteille_plastique,fruits_rouges
+danone_danup_tropical_170g_bottle,yaourt,danone,danup,170g,bouteille_plastique,tropical
+danone_ptit_danup_vanille_130g_bottle,yaourt,danone,p'tit danup,130g,bouteille_plastique,vanille
+danone_ptit_danup_fraise_130g_bottle,yaourt,danone,p'tit danup,130g,bouteille_plastique,fraise
+danone_danino_fraise_130g_bottle,yaourt,danone,danino,130g,bouteille_plastique,fraise
+danone_danino_croissance_nature_sucre_40g_pot,yaourt,danone,danino croissance,40g,pot_plastique,nature_sucre
+danone_danino_croissance_fraise_40g_pot,yaourt,danone,danino croissance,40g,pot_plastique,fraise
+danone_danino_croissance_fraise_80g_pot,yaourt,danone,danino croissance,80g,pot_plastique,fraise
+danone_moufid_abricot_50g_pot,yaourt,danone,moufid,50g,pot_plastique,abricot
+danone_moufid_jibi_fraise_200ml_brique,yaourt,danone,moufid jibi,200ml,brique,fraise
+danone_moufid_jibi_choco_200ml_brique,yaourt,danone,moufid jibi,200ml,brique,chocolat
+danone_salim_raib_vanille_440ml_brique,yaourt,danone,salim raib,440ml,brique,vanille
+danone_salim_raib_banane_440ml_brique,yaourt,danone,salim raib,440ml,brique,banane
+danone_salim_lben_beldi_440ml_brique,yaourt,danone,salim lben,440ml,brique,nature
+danone_salim_lait_demi_ecreme_470ml_brique,lait,danone,salim lait frais,470ml,brique,nature
+danone_jebli_jben_frais_190g_pot,fromage,danone,jebli original,190g,pot_plastique,nature
+danone_coeur_de_lait_8portions_pot,fromage,danone,coeur de lait,8_portions,pot_plastique,nature
+danone_coeur_de_lait_64portions_pot,fromage,danone,coeur de lait,64_portions,pot_plastique,nature
+coca_gold_strike_predator_250ml_can,boisson_energetique,coca,gold strike predator energy,250ml,canette,original
+coca_burn_original_250ml_can,boisson_energetique,coca,burn energy drink,250ml,canette,original
+coca_monster_energy_500ml_can,boisson_energetique,coca,monster energy,500ml,canette,original
+coca_ciel_eau_minerale_5l_bouteille,eau,coca,ciel eau minerale,5l,bouteille_plastique,nature
+coca_ciel_eau_table_1_5l_bouteille,eau,coca,ciel eau de table faible en sodium,1.5l,bouteille_plastique,nature
+coca_ciel_eau_table_33cl_bouteille,eau,coca,ciel eau de table faible en sodium,33cl,bouteille_plastique,nature
+fanta_orange_1_5l_bottle,soda,coca,fanta,1.5l,bouteille_plastique,orange
+schweppes_virgin_mojito_90cl_bottle,soda,coca,schweppes,90cl,bouteille_plastique,virgin_mojito
+sprite_citron_33cl_bottle,soda,coca,sprite,33cl,bouteille_plastique,citron
+schweppes_virgin_mojito_25cl_can,soda,coca,schweppes,25cl,canette,virgin_mojito
+danone_danup_fraise_170g_bottle,yaourt,danone,danup,170g,bouteille_plastique,fraise
+danone_danup_vanille_170g_bottle,yaourt,danone,danup,170g,bouteille_plastique,vanille
+danone_moufid_jibi_vanilla_200ml_brique,yaourt,danone,moufid jibi,200ml,brique,vanille_splash
+salim_lait_entier_200ml_brique,lait,danone,salim lait frais,200ml,brique,nature
+danone_veloute_vanille_110g_pot,yaourt,danone,danone veloute vanille,110g,pot_plastique,vanille
+danone_veloute_pistache_110g_pot,yaourt,danone,danone veloute pistache,110g,pot_plastique,pistache
+danone_coeur_de_lait_16portions_pot,fromage,danone,coeur de lait,16_portions,pot_plastique,nature
