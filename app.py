@@ -18,8 +18,8 @@ from datetime import datetime
 # ==============================
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-YOLO_MODEL_PATH = "best-yolov8s.pt"
-SKU_MODEL_PATH = "best-mobilenetv3large.pth"
+YOLO_MODEL_PATH = "best.pt"
+SKU_MODEL_PATH = "best-ilyas.pth"
 MAPPING_PATH = "label_map.json"
 CSV_PATH = "sku_catalog.csv"
 IMG_SIZE = 224
@@ -236,24 +236,6 @@ def run_pipeline(image_bytes, yolo_model, sku_model, idx_to_class, sku_catalog,
     return img_annotated, detections, crops_data
 
 # ==============================
-# FONCTION CAMERA (capture unique)
-# ==============================
-def capture_photo():
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        st.error("❌ Impossible d'ouvrir la caméra")
-        return None
-    
-    ret, frame = cap.read()
-    cap.release()
-    
-    if not ret:
-        st.error("❌ Impossible de capturer l'image")
-        return None
-    
-    return frame
-
-# ==============================
 # UI STREAMLIT
 # ==============================
 st.set_page_config(
@@ -361,7 +343,7 @@ with st.spinner("🚀 Chargement des modèles..."):
 # ==============================
 # SÉLECTION DU MODE
 # ==============================
-mode = st.radio("📱 Mode d'analyse", ["📸 Upload d'image", "🎥 Prendre une photo"], horizontal=True)
+mode = st.radio("📱 Mode d'analyse", ["📸 Upload d'image", "📷 Prendre une photo"], horizontal=True)
 
 # ==============================
 # MODE UPLOAD
@@ -504,50 +486,33 @@ if mode == "📸 Upload d'image":
             st.info("Aucune détection trouvée dans cette image")
 
 # ==============================
-# MODE CAMERA (capture unique)
+# MODE CAMERA (avec st.camera_input - fonctionne sur PC et téléphone)
 # ==============================
 else:
-    st.markdown("### 📸 Prendre une photo du rayon")
+    st.markdown("### 📷 Prendre une photo du rayon")
+    st.info("📱 Utilisez l'appareil photo de votre téléphone ou la webcam de votre ordinateur")
     
-    col1, col2 = st.columns(2)
+    # st.camera_input fonctionne sur PC et mobile
+    camera_image = st.camera_input("📸 Cadrez et prenez la photo", label_visibility="collapsed")
     
-    with col1:
-        if st.button("📷 Déclencher la caméra", use_container_width=True):
-            with st.spinner("📸 Capture en cours..."):
-                frame = capture_photo()
-                if frame is not None:
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    _, buffer = cv2.imencode('.jpg', frame_rgb)
-                    img_bytes = buffer.tobytes()
-                    
-                    # Analyser l'image
-                    with st.spinner("🔍 Analyse en cours..."):
-                        img_out, detections, crops_data = run_pipeline(
-                            img_bytes, yolo_model, sku_model, idx_to_class, sku_catalog, 
-                            conf_threshold, upscale_factor, display_threshold
-                        )
-                    
-                    st.session_state['captured_image'] = frame_rgb
-                    st.session_state['img_out'] = img_out
-                    st.session_state['detections'] = detections
-                    st.session_state['crops_data'] = crops_data
-                    st.session_state['img_bytes'] = img_bytes
-                    st.success("✅ Photo capturée et analysée !")
-                else:
-                    st.error("❌ Erreur lors de la capture")
-    
-    # Afficher les résultats si disponibles
-    if 'captured_image' in st.session_state:
+    if camera_image is not None:
+        # Lire l'image capturée
+        img_bytes = camera_image.getvalue()
+        
+        with st.spinner("🔍 Analyse en cours..."):
+            img_out, detections, crops_data = run_pipeline(
+                img_bytes, yolo_model, sku_model, idx_to_class, sku_catalog, 
+                conf_threshold, upscale_factor, display_threshold
+            )
+        
+        # Affichage des résultats
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### 📸 Photo capturée")
-            st.image(st.session_state['captured_image'], use_container_width=True)
+            st.image(camera_image, use_container_width=True)
         with col2:
             st.markdown("### 🎯 Résultat annoté")
-            st.image(cv2.cvtColor(st.session_state['img_out'], cv2.COLOR_BGR2RGB), use_container_width=True)
-        
-        crops_data = st.session_state.get('crops_data', [])
-        detections = st.session_state.get('detections', [])
+            st.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), use_container_width=True)
         
         if crops_data:
             st.markdown("---")
@@ -659,6 +624,5 @@ else:
                 )
         else:
             st.info("Aucune détection trouvée dans cette image")
-    
     else:
-        st.info("👈 Cliquez sur 'Déclencher la caméra' pour prendre une photo")
+        st.info("👈 Cliquez sur 'Browse files' ou 'Prendre une photo' pour capturer une image")
