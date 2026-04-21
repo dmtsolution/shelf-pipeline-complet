@@ -1,26 +1,23 @@
 import streamlit as st
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchvision.transforms as transforms
 import cv2
 import numpy as np
+import json
+import pandas as pd
 from PIL import Image
 import timm
-import os
-import time
-import pandas as pd
-import json
-import io
 from ultralytics import YOLO
+import io
+import os
 from datetime import datetime
 
 # ==============================
 # CONFIGURATION
 # ==============================
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# Chemins des modèles
 YOLO_MODEL_PATH = "best-yolov8s.pt"
 SKU_MODEL_PATH = "best-mobilenetv3large.pth"
 MAPPING_PATH = "label_map.json"
@@ -34,29 +31,26 @@ CLASS_NAMES = [
 ]
 
 # ==============================
-# TRANSFORMS (exactement comme stage 2)
+# TRANSFORMS
 # ==============================
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
-
-def get_transform():
-    return transforms.Compose([
-        transforms.Resize(int(IMG_SIZE * 1.14)),
-        transforms.CenterCrop(IMG_SIZE),
-        transforms.ToTensor(),
-        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
-    ])
+val_transforms = transforms.Compose([
+    transforms.Resize(int(IMG_SIZE * 1.14)),
+    transforms.CenterCrop(IMG_SIZE),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
+])
 
 # ==============================
 # CHARGEMENT DES MODÈLES
 # ==============================
 @st.cache_resource
-def load_yolo_model():
-    return YOLO(YOLO_MODEL_PATH)
+def load_yolo_model(path):
+    return YOLO(path)
 
 @st.cache_resource
-def load_sku_model():
-    with open(MAPPING_PATH, 'r') as f:
+def load_sku_model(model_path, labels_path):
+    with open(labels_path, 'r') as f:
         label_map = json.load(f)
     idx_to_class = {int(k): v for k, v in label_map.items()}
     nc = len(idx_to_class)
@@ -65,7 +59,7 @@ def load_sku_model():
     if hasattr(model, 'classifier'):
         model.classifier = nn.Linear(model.classifier.in_features, nc)
     
-    state_dict = torch.load(SKU_MODEL_PATH, map_location='cpu')
+    state_dict = torch.load(model_path, map_location='cpu')
     if any(k.startswith('module.') for k in state_dict.keys()):
         state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
     
@@ -75,20 +69,21 @@ def load_sku_model():
     return model, idx_to_class, nc
 
 @st.cache_data
-def load_sku_catalog():
-    if os.path.exists(CSV_PATH):
-        df = pd.read_csv(CSV_PATH)
+def load_sku_catalog(path):
+    if os.path.exists(path):
+        df = pd.read_csv(path)
         return df.set_index("sku_id").to_dict("index"), df
     else:
         return {}, pd.DataFrame()
 
 # ==============================
-# FONCTIONS D'AGRANDISSEMENT
+# FONCTIONS D'AMÉLIORATION
 # ==============================
 def upscale_crop(crop, scale_factor=2.0):
     h, w = crop.shape[:2]
     new_h, new_w = int(h * scale_factor), int(w * scale_factor)
-    return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    upscaled = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+    return upscaled
 
 def prepare_crop_for_model(crop, target_size=224, upscale_first=True):
     if upscale_first and crop.shape[0] < 100 and crop.shape[1] < 100:
@@ -112,7 +107,7 @@ def prepare_crop_for_model(crop, target_size=224, upscale_first=True):
     
     return square
 
-def predict_sku_with_upscale(model, crop_image, idx_to_class, transform, upscale_factor=2.0):
+def predict_sku_with_upscale(model, crop_image, idx_to_class, upscale_factor=2.0):
     if isinstance(crop_image, np.ndarray):
         h, w = crop_image.shape[:2]
         if h < 150 or w < 150:
@@ -123,9 +118,9 @@ def predict_sku_with_upscale(model, crop_image, idx_to_class, transform, upscale
         
         crop_prepared = prepare_crop_for_model(crop_upscaled, IMG_SIZE)
         crop_pil = Image.fromarray(crop_prepared)
-        img_t = transform(crop_pil).unsqueeze(0).to(DEVICE)
+        img_t = val_transforms(crop_pil).unsqueeze(0).to(DEVICE)
     else:
-        img_t = transform(crop_image).unsqueeze(0).to(DEVICE)
+        img_t = val_transforms(crop_image).unsqueeze(0).to(DEVICE)
     
     with torch.no_grad():
         out = model(img_t)
@@ -138,66 +133,24 @@ def predict_sku_with_upscale(model, crop_image, idx_to_class, transform, upscale
     return skus, confs
 
 # ==============================
-# DESSIN SUR IMAGE (style stage 2)
-# ==============================
-def draw_detections(img_np, detections, display_threshold=0.25):
-    img = img_np.copy()
-    
-    for det in detections:
-        x1, y1, x2, y2 = det['bbox']
-        conf = det['confiance_sku']
-        product_name = det['nom_produit']
-        
-        if conf > 0.7:
-            color = (0, 255, 0)
-        elif conf > 0.4:
-            color = (0, 255, 255)
-        elif conf > 0.2:
-            color = (0, 165, 255)
-        else:
-            color = (0, 0, 255)
-        
-        # Rectangle
-        cv2.rectangle(img, (x1, y1), (x2, y2), color, 3)
-        
-        # Texte (nom du produit, pas la catégorie)
-        if conf > display_threshold:
-            text = f"{product_name} ({conf:.1%})"
-        else:
-            text = det['famille']
-        
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.6
-        thickness = 2
-        (tw, th), _ = cv2.getTextSize(text, font, font_scale, thickness)
-        
-        # Fond du texte
-        cv2.rectangle(img, (x1, y1 - th - 8), (x1 + tw + 8, y1), (0, 0, 0), -1)
-        cv2.putText(img, text, (x1 + 4, y1 - 6), font, font_scale, color, thickness)
-    
-    return img
-
-# ==============================
 # PIPELINE COMPLET
 # ==============================
 def run_pipeline(image_bytes, yolo_model, sku_model, idx_to_class, sku_catalog, 
-                transform, conf_threshold=0.5, upscale_factor=2.5, display_threshold=0.25):
-    # Charger l'image
+                conf_threshold=0.5, upscale_factor=2.5, display_threshold=0.10):
     img = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     
-    # Agrandir si nécessaire pour YOLO
     h, w = img_rgb.shape[:2]
     if max(h, w) < 640:
         scale = 640 / max(h, w)
         new_w, new_h = int(w * scale), int(h * scale)
         img_rgb = cv2.resize(img_rgb, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
     
-    # YOLO détection
     results = yolo_model(img_rgb, conf=conf_threshold, verbose=False)
     
     detections = []
     crops_data = []
+    img_annotated = img.copy()
     
     for r in results:
         if r.boxes is None:
@@ -217,13 +170,12 @@ def run_pipeline(image_bytes, yolo_model, sku_model, idx_to_class, sku_catalog,
                 top5 = []
                 crop_for_display = crop_original
             else:
-                skus, confs = predict_sku_with_upscale(sku_model, crop_original, idx_to_class, transform, upscale_factor)
+                skus, confs = predict_sku_with_upscale(sku_model, crop_original, idx_to_class, upscale_factor)
                 product_info = sku_catalog.get(skus[0], {})
                 product_name = product_info.get('product_name', skus[0])
                 top5 = list(zip(skus, confs))
                 crop_for_display = prepare_crop_for_model(crop_original, IMG_SIZE, upscale_first=True)
             
-            # Sauvegarde crop
             crop_display = Image.fromarray(crop_for_display)
             crop_bytes = io.BytesIO()
             crop_display.save(crop_bytes, format='JPEG')
@@ -255,24 +207,63 @@ def run_pipeline(image_bytes, yolo_model, sku_model, idx_to_class, sku_catalog,
                 "stage2_conf": confs[0],
                 "top5": top5,
                 "brand": product_full_info.get('brand', 'N/A'),
-                "capacity": product_full_info.get('capacity', 'N/A')
+                "capacity": product_full_info.get('capacity', 'N/A'),
+                "emballage": product_full_info.get('emballage', 'N/A'),
+                "saveur": product_full_info.get('saveur', 'N/A')
             })
-    
-    # Dessiner les résultats
-    img_annotated = draw_detections(img, detections, display_threshold)
+            
+            if confs[0] > 0.7:
+                color = (0, 255, 0)
+            elif confs[0] > 0.4:
+                color = (0, 255, 255)
+            elif confs[0] > 0.2:
+                color = (0, 165, 255)
+            else:
+                color = (0, 0, 255)
+            
+            label = f"{product_name} ({confs[0]:.1%})" if confs[0] > display_threshold else famille
+            
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = 0.6
+            thickness = 2
+            (text_w, text_h), _ = cv2.getTextSize(label, font, font_scale, thickness)
+            
+            cv2.rectangle(img_annotated, (x1, y1), (x2, y2), color, 2)
+            cv2.rectangle(img_annotated, (x1, y1 - text_h - 8), (x1 + text_w + 8, y1), (0, 0, 0), -1)
+            cv2.putText(img_annotated, label, (x1 + 4, y1 - 6),
+                        font, font_scale, (255, 255, 255), thickness)
     
     return img_annotated, detections, crops_data
+
+# ==============================
+# FONCTION CAMERA (capture unique)
+# ==============================
+def capture_photo():
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        st.error("❌ Impossible d'ouvrir la caméra")
+        return None
+    
+    ret, frame = cap.read()
+    cap.release()
+    
+    if not ret:
+        st.error("❌ Impossible de capturer l'image")
+        return None
+    
+    return frame
 
 # ==============================
 # UI STREAMLIT
 # ==============================
 st.set_page_config(
-    page_title="SKU Recognition Pipeline PRO",
+    page_title="SKU Recognition Pipeline",
     page_icon="🏪",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# CSS
+# Custom CSS professionnel
 st.markdown("""
 <style>
     .main-header {
@@ -282,28 +273,34 @@ st.markdown("""
         margin-bottom: 2rem;
         text-align: center;
     }
-    .main-header h1 {
-        color: white;
-        margin: 0;
-    }
-    .main-header p {
-        color: rgba(255,255,255,0.9);
-        margin-top: 0.5rem;
-    }
     .metric-card {
         background: white;
         padding: 1rem;
         border-radius: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         text-align: center;
+    }
+    .detection-table {
+        margin-top: 2rem;
+        background: white;
+        border-radius: 10px;
+        padding: 1rem;
+    }
+    .stButton > button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
+# Header
 st.markdown("""
 <div class="main-header">
-    <h1>🏪 SKU Recognition Pipeline PRO</h1>
-    <p>YOLO + MobileNetV3-Large | Détection en rayon → Identification SKU</p>
+    <h1 style="color: white; margin: 0;">🏪 SKU Recognition Pipeline</h1>
+    <p style="color: rgba(255,255,255,0.9); margin-top: 0.5rem;">Détection YOLO + Classification MobileNetV3</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -311,6 +308,7 @@ st.markdown("""
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
     
+    st.markdown("### 🎯 Seuils")
     conf_threshold = st.slider(
         "Seuil détection YOLO", 
         0.10, 0.95, 0.45, 0.05,
@@ -323,6 +321,7 @@ with st.sidebar:
         help="Affiche le nom du produit seulement si confiance > seuil"
     )
     
+    st.markdown("### 🔬 Amélioration")
     upscale_factor = st.slider(
         "Facteur d'agrandissement", 
         1.0, 4.0, 2.5, 0.5,
@@ -330,134 +329,336 @@ with st.sidebar:
     )
     
     st.markdown("---")
-    st.info("**Pipeline:**\n- Stage 1: YOLO (détection)\n- Stage 2: MobileNetV3 (identification)\n- Classes: 120 SKU")
+    st.markdown("### 📊 Pipeline")
+    st.info("""
+    **Stage 1:** YOLO (détection famille)  
+    **Stage 2:** MobileNetV3 (identification SKU)  
+    **Classes:** 120 SKU  
+    """)
+    
+    st.markdown("---")
+    st.markdown("### 📁 Fichiers")
+    st.code(f"""
+    YOLO: {YOLO_MODEL_PATH}
+    SKU: {SKU_MODEL_PATH}
+    Labels: {MAPPING_PATH}
+    """)
 
 # Chargement des modèles
 with st.spinner("🚀 Chargement des modèles..."):
     try:
-        yolo_model = load_yolo_model()
-        sku_model, idx_to_class, num_classes = load_sku_model()
-        sku_catalog, df_catalog = load_sku_catalog()
-        transform = get_transform()
+        yolo_model = load_yolo_model(YOLO_MODEL_PATH)
+        sku_model, idx_to_class, num_classes = load_sku_model(SKU_MODEL_PATH, MAPPING_PATH)
+        sku_catalog, df_catalog = load_sku_catalog(CSV_PATH)
         
         st.success(f"✅ Modèles chargés avec succès!")
         st.info(f"📊 {num_classes} classes SKU disponibles | 📦 {len(sku_catalog)} produits dans le catalogue")
+        
     except Exception as e:
-        st.error(f"❌ Erreur: {e}")
+        st.error(f"❌ Erreur lors du chargement: {e}")
         st.stop()
 
-# Mode
-mode = st.radio("📱 Mode d'analyse", ["📸 Upload d'image", "🎥 Webcam live"], horizontal=True)
+# ==============================
+# SÉLECTION DU MODE
+# ==============================
+mode = st.radio("📱 Mode d'analyse", ["📸 Upload d'image", "🎥 Prendre une photo"], horizontal=True)
 
 # ==============================
 # MODE UPLOAD
 # ==============================
 if mode == "📸 Upload d'image":
-    uploaded_file = st.file_uploader("📸 Déposez une image de rayon", type=["jpg", "jpeg", "png"])
+    uploaded_file = st.file_uploader(
+        "📸 Déposez une image de rayon",
+        type=["jpg", "jpeg", "png"],
+        help="JPG, JPEG ou PNG - Max 200MB"
+    )
     
     if uploaded_file is not None:
         with st.spinner("🔍 Analyse en cours..."):
             img_bytes = uploaded_file.read()
-            t0 = time.time()
             img_out, detections, crops_data = run_pipeline(
                 img_bytes, yolo_model, sku_model, idx_to_class, sku_catalog, 
-                transform, conf_threshold, upscale_factor, display_threshold
+                conf_threshold, upscale_factor, display_threshold
             )
-            latency = (time.time() - t0) * 1000
         
+        # Affichage des résultats
         col1, col2 = st.columns(2)
         with col1:
-            st.image(uploaded_file, caption="📸 Image originale", use_container_width=True)
+            st.markdown("### 📸 Image originale")
+            st.image(uploaded_file, use_container_width=True)
         with col2:
-            st.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), caption="🎯 Résultat annoté", use_container_width=True)
+            st.markdown("### 🎯 Résultat annoté")
+            st.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), use_container_width=True)
         
-        # Métriques
-        st.divider()
-        c1, c2, c3 = st.columns(3)
-        c1.metric("📦 Détections", len(detections))
-        c2.metric("⚡ Latence", f"{latency:.0f} ms")
-        if detections:
-            avg_conf = np.mean([d['confiance_sku'] for d in detections])
-            c3.metric("📊 Confiance moyenne", f"{avg_conf:.1%}")
-        
-        if detections:
+        # Statistiques
+        if crops_data:
             st.markdown("---")
-            st.markdown("## 📋 Tableau complet des détections")
+            st.markdown("## 📈 Analyse des détections")
             
+            high_conf = len([c for c in crops_data if c['stage2_conf'] > 0.7])
+            medium_conf = len([c for c in crops_data if 0.4 < c['stage2_conf'] <= 0.7])
+            low_conf = len([c for c in crops_data if 0.2 < c['stage2_conf'] <= 0.4])
+            very_low_conf = len([c for c in crops_data if c['stage2_conf'] <= 0.2])
+            
+            m1, m2, m3, m4, m5 = st.columns(5)
+            with m1:
+                st.metric("📦 Total détections", len(crops_data))
+            with m2:
+                st.metric("✅ >70%", high_conf)
+            with m3:
+                st.metric("⚠️ 40-70%", medium_conf)
+            with m4:
+                st.metric("🟠 20-40%", low_conf)
+            with m5:
+                st.metric("🔴 <20%", very_low_conf)
+            
+            # Détails des détections
+            st.markdown("---")
+            st.markdown("## 🔍 Détail des détections")
+            
+            crops_data_sorted = sorted(crops_data, key=lambda x: x['stage2_conf'], reverse=True)
+            
+            for i, crop_data in enumerate(crops_data_sorted):
+                if crop_data['stage2_conf'] > 0.7:
+                    icon = "🟢"
+                elif crop_data['stage2_conf'] > 0.4:
+                    icon = "🟡"
+                elif crop_data['stage2_conf'] > 0.2:
+                    icon = "🟠"
+                else:
+                    icon = "🔴"
+                
+                with st.expander(f"{icon} Détection #{i+1} - {crop_data['stage2_nom']} ({crop_data['stage2_conf']:.1%})"):
+                    col_a, col_b = st.columns([1, 2])
+                    with col_a:
+                        st.image(crop_data["crop_bytes"], caption="Crop préparé", use_container_width=True)
+                    with col_b:
+                        st.markdown(f"**🎯 Stage 1 (YOLO):** {crop_data['stage1']}")
+                        st.markdown(f"**🏷️ SKU:** `{crop_data['stage2_sku']}`")
+                        st.markdown(f"**📦 Produit:** {crop_data['stage2_nom']}")
+                        st.markdown(f"**🏭 Marque:** {crop_data['brand']}")
+                        st.markdown(f"**📏 Capacité:** {crop_data['capacity']}")
+                        st.markdown(f"**🥤 Emballage:** {crop_data['emballage']}")
+                        st.markdown(f"**🍓 Saveur:** {crop_data['saveur']}")
+                        st.markdown(f"**📊 Confiance SKU:** {crop_data['stage2_conf']:.1%}")
+                        st.progress(crop_data['stage2_conf'])
+                        
+                        if crop_data['top5']:
+                            st.markdown("**🏆 Top-5 prédictions:**")
+                            for j, (sku, conf) in enumerate(crop_data['top5'][:5]):
+                                st.markdown(f"{j+1}. `{sku}` - {conf:.1%}")
+        
+        # TABLEAU COMPLET
+        st.markdown("---")
+        st.markdown("## 📋 Rapport complet des détections")
+        
+        if detections:
             df_results = pd.DataFrame(detections)
-            display_cols = ["nom_produit", "brand", "capacity", "emballage", "saveur", 
-                           "confiance_sku", "confiance_detection", "sku"]
-            available_cols = [c for c in display_cols if c in df_results.columns]
-            df_display = df_results[available_cols].copy()
             
-            df_display = df_display.rename(columns={
+            display_cols = ["nom_produit", "brand", "capacity", "emballage", "saveur", 
+                           "famille", "confiance_sku", "confiance_detection", "sku"]
+            
+            available_cols = [col for col in display_cols if col in df_results.columns]
+            df_display = df_results[available_cols]
+            
+            column_names = {
                 "nom_produit": "Produit",
                 "brand": "Marque",
                 "capacity": "Capacité",
                 "emballage": "Emballage",
                 "saveur": "Saveur",
+                "famille": "Famille",
                 "confiance_sku": "Confiance SKU",
                 "confiance_detection": "Confiance Détection",
                 "sku": "SKU ID"
-            })
+            }
+            df_display = df_display.rename(columns=column_names)
             
-            df_display["Confiance SKU"] = df_display["Confiance SKU"].apply(lambda x: f"{x:.1%}")
-            df_display["Confiance Détection"] = df_display["Confiance Détection"].apply(lambda x: f"{x:.1%}")
+            if "Confiance SKU" in df_display.columns:
+                df_display["Confiance SKU"] = df_display["Confiance SKU"].apply(lambda x: f"{x:.1%}")
+            if "Confiance Détection" in df_display.columns:
+                df_display["Confiance Détection"] = df_display["Confiance Détection"].apply(lambda x: f"{x:.1%}")
             
             st.dataframe(df_display, use_container_width=True, height=400)
             
-            # Export
-            csv_data = df_results.to_csv(index=False)
-            st.download_button(
-                "📥 Télécharger CSV",
-                data=csv_data,
-                file_name=f"detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                csv_data = df_results.to_csv(index=False)
+                st.download_button(
+                    "📥 Télécharger CSV",
+                    data=csv_data,
+                    file_name=f"detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with col_exp2:
+                json_data = json.dumps(detections, indent=2, ensure_ascii=False, default=str)
+                st.download_button(
+                    "📥 Télécharger JSON",
+                    data=json_data,
+                    file_name=f"detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
+        else:
+            st.info("Aucune détection trouvée dans cette image")
 
 # ==============================
-# MODE WEBCAM
+# MODE CAMERA (capture unique)
 # ==============================
 else:
-    st.info("📹 Webcam en temps réel - Détection live des produits")
+    st.markdown("### 📸 Prendre une photo du rayon")
     
-    cap = cv2.VideoCapture(0)
-    frame_placeholder = st.empty()
-    results_placeholder = st.empty()
-    stop_button = st.button("⏹️ Arrêter la caméra")
+    col1, col2 = st.columns(2)
     
-    last_detections = []
+    with col1:
+        if st.button("📷 Déclencher la caméra", use_container_width=True):
+            with st.spinner("📸 Capture en cours..."):
+                frame = capture_photo()
+                if frame is not None:
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    _, buffer = cv2.imencode('.jpg', frame_rgb)
+                    img_bytes = buffer.tobytes()
+                    
+                    # Analyser l'image
+                    with st.spinner("🔍 Analyse en cours..."):
+                        img_out, detections, crops_data = run_pipeline(
+                            img_bytes, yolo_model, sku_model, idx_to_class, sku_catalog, 
+                            conf_threshold, upscale_factor, display_threshold
+                        )
+                    
+                    st.session_state['captured_image'] = frame_rgb
+                    st.session_state['img_out'] = img_out
+                    st.session_state['detections'] = detections
+                    st.session_state['crops_data'] = crops_data
+                    st.session_state['img_bytes'] = img_bytes
+                    st.success("✅ Photo capturée et analysée !")
+                else:
+                    st.error("❌ Erreur lors de la capture")
     
-    while cap.isOpened() and not stop_button:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    # Afficher les résultats si disponibles
+    if 'captured_image' in st.session_state:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("### 📸 Photo capturée")
+            st.image(st.session_state['captured_image'], use_container_width=True)
+        with col2:
+            st.markdown("### 🎯 Résultat annoté")
+            st.image(cv2.cvtColor(st.session_state['img_out'], cv2.COLOR_BGR2RGB), use_container_width=True)
         
-        # Convertir frame en bytes
-        _, buffer = cv2.imencode('.jpg', frame)
-        img_bytes = buffer.tobytes()
+        crops_data = st.session_state.get('crops_data', [])
+        detections = st.session_state.get('detections', [])
         
-        # Analyse
-        img_out, detections, _ = run_pipeline(
-            img_bytes, yolo_model, sku_model, idx_to_class, sku_catalog,
-            transform, conf_threshold, upscale_factor, display_threshold
-        )
+        if crops_data:
+            st.markdown("---")
+            st.markdown("## 📈 Analyse des détections")
+            
+            high_conf = len([c for c in crops_data if c['stage2_conf'] > 0.7])
+            medium_conf = len([c for c in crops_data if 0.4 < c['stage2_conf'] <= 0.7])
+            low_conf = len([c for c in crops_data if 0.2 < c['stage2_conf'] <= 0.4])
+            very_low_conf = len([c for c in crops_data if c['stage2_conf'] <= 0.2])
+            
+            m1, m2, m3, m4, m5 = st.columns(5)
+            with m1:
+                st.metric("📦 Total détections", len(crops_data))
+            with m2:
+                st.metric("✅ >70%", high_conf)
+            with m3:
+                st.metric("⚠️ 40-70%", medium_conf)
+            with m4:
+                st.metric("🟠 20-40%", low_conf)
+            with m5:
+                st.metric("🔴 <20%", very_low_conf)
+            
+            st.markdown("---")
+            st.markdown("## 🔍 Détail des détections")
+            
+            crops_data_sorted = sorted(crops_data, key=lambda x: x['stage2_conf'], reverse=True)
+            
+            for i, crop_data in enumerate(crops_data_sorted):
+                if crop_data['stage2_conf'] > 0.7:
+                    icon = "🟢"
+                elif crop_data['stage2_conf'] > 0.4:
+                    icon = "🟡"
+                elif crop_data['stage2_conf'] > 0.2:
+                    icon = "🟠"
+                else:
+                    icon = "🔴"
+                
+                with st.expander(f"{icon} Détection #{i+1} - {crop_data['stage2_nom']} ({crop_data['stage2_conf']:.1%})"):
+                    col_a, col_b = st.columns([1, 2])
+                    with col_a:
+                        st.image(crop_data["crop_bytes"], caption="Crop préparé", use_container_width=True)
+                    with col_b:
+                        st.markdown(f"**🎯 Stage 1 (YOLO):** {crop_data['stage1']}")
+                        st.markdown(f"**🏷️ SKU:** `{crop_data['stage2_sku']}`")
+                        st.markdown(f"**📦 Produit:** {crop_data['stage2_nom']}")
+                        st.markdown(f"**🏭 Marque:** {crop_data['brand']}")
+                        st.markdown(f"**📏 Capacité:** {crop_data['capacity']}")
+                        st.markdown(f"**🥤 Emballage:** {crop_data['emballage']}")
+                        st.markdown(f"**🍓 Saveur:** {crop_data['saveur']}")
+                        st.markdown(f"**📊 Confiance SKU:** {crop_data['stage2_conf']:.1%}")
+                        st.progress(crop_data['stage2_conf'])
+                        
+                        if crop_data['top5']:
+                            st.markdown("**🏆 Top-5 prédictions:**")
+                            for j, (sku, conf) in enumerate(crop_data['top5'][:5]):
+                                st.markdown(f"{j+1}. `{sku}` - {conf:.1%}")
         
-        # Affichage
-        frame_placeholder.image(cv2.cvtColor(img_out, cv2.COLOR_BGR2RGB), 
-                                caption="Webcam live", use_container_width=True)
+        # TABLEAU COMPLET
+        st.markdown("---")
+        st.markdown("## 📋 Rapport complet des détections")
         
         if detections:
-            df_live = pd.DataFrame(detections)[["nom_produit", "confiance_sku", "famille"]]
-            df_live = df_live.rename(columns={
+            df_results = pd.DataFrame(detections)
+            
+            display_cols = ["nom_produit", "brand", "capacity", "emballage", "saveur", 
+                           "famille", "confiance_sku", "confiance_detection", "sku"]
+            
+            available_cols = [col for col in display_cols if col in df_results.columns]
+            df_display = df_results[available_cols]
+            
+            column_names = {
                 "nom_produit": "Produit",
-                "confiance_sku": "Confiance",
-                "famille": "Famille"
-            })
-            df_live["Confiance"] = df_live["Confiance"].apply(lambda x: f"{x:.1%}")
-            results_placeholder.dataframe(df_live, use_container_width=True)
+                "brand": "Marque",
+                "capacity": "Capacité",
+                "emballage": "Emballage",
+                "saveur": "Saveur",
+                "famille": "Famille",
+                "confiance_sku": "Confiance SKU",
+                "confiance_detection": "Confiance Détection",
+                "sku": "SKU ID"
+            }
+            df_display = df_display.rename(columns=column_names)
+            
+            if "Confiance SKU" in df_display.columns:
+                df_display["Confiance SKU"] = df_display["Confiance SKU"].apply(lambda x: f"{x:.1%}")
+            if "Confiance Détection" in df_display.columns:
+                df_display["Confiance Détection"] = df_display["Confiance Détection"].apply(lambda x: f"{x:.1%}")
+            
+            st.dataframe(df_display, use_container_width=True, height=400)
+            
+            col_exp1, col_exp2 = st.columns(2)
+            with col_exp1:
+                csv_data = df_results.to_csv(index=False)
+                st.download_button(
+                    "📥 Télécharger CSV",
+                    data=csv_data,
+                    file_name=f"detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            with col_exp2:
+                json_data = json.dumps(detections, indent=2, ensure_ascii=False, default=str)
+                st.download_button(
+                    "📥 Télécharger JSON",
+                    data=json_data,
+                    file_name=f"detections_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                    use_container_width=True
+                )
         else:
-            results_placeholder.info("🔍 Aucun produit détecté")
+            st.info("Aucune détection trouvée dans cette image")
     
-    cap.release()
-    st.success("✅ Caméra arrêtée")
+    else:
+        st.info("👈 Cliquez sur 'Déclencher la caméra' pour prendre une photo")
