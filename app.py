@@ -18,8 +18,8 @@ from datetime import datetime
 # ==============================
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-YOLO_MODEL_PATH = "best.pt"
-SKU_MODEL_PATH = "best-ilyas.pth"
+YOLO_MODEL_PATH = "best-yolov8s.pt"
+SKU_MODEL_PATH = "best-mobilenetv3large.pth"
 MAPPING_PATH = "label_map.json"
 CSV_PATH = "sku_catalog.csv"
 IMG_SIZE = 224
