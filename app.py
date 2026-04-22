@@ -239,8 +239,6 @@ def run_pipeline(image_bytes, yolo_model, sku_model, idx_to_class, sku_catalog,
 # UI STREAMLIT
 # ==============================
 st.set_page_config(
-    page_title="SKU Recognition Pipeline",
-    page_icon="🏪",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -276,14 +274,6 @@ st.markdown("""
         padding: 0.5rem 1rem;
     }
 </style>
-""", unsafe_allow_html=True)
-
-# Header
-st.markdown("""
-<div class="main-header">
-    <h1 style="color: white; margin: 0;">🏪 SKU Recognition Pipeline</h1>
-    <p style="color: rgba(255,255,255,0.9); margin-top: 0.5rem;">Détection YOLO + Classification MobileNetV3</p>
-</div>
 """, unsafe_allow_html=True)
 
 # Sidebar
