@@ -322,10 +322,7 @@ with st.spinner("🚀 Chargement des modèles..."):
         yolo_model = load_yolo_model(YOLO_MODEL_PATH)
         sku_model, idx_to_class, num_classes = load_sku_model(SKU_MODEL_PATH, MAPPING_PATH)
         sku_catalog, df_catalog = load_sku_catalog(CSV_PATH)
-        
-        st.success(f"✅ Modèles chargés avec succès!")
-        st.info(f"📊 {num_classes} classes SKU disponibles | 📦 {len(sku_catalog)} produits dans le catalogue")
-        
+                
     except Exception as e:
         st.error(f"❌ Erreur lors du chargement: {e}")
         st.stop()
