@@ -335,8 +335,14 @@ st.set_page_config(
 # ══════════════════════════════════════════════════════
 # GLOBAL CSS  (matching JS app design system)
 # ══════════════════════════════════════════════════════
+# Font import (separate call — avoids HTML parser confusion)
+st.markdown(
+    '<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500'
+    '&amp;family=Syne:wght@400;600;700;800&amp;display=swap" rel="stylesheet">',
+    unsafe_allow_html=True
+)
+
 st.markdown("""
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
 /* ── Design tokens ── */
 :root {
@@ -350,8 +356,9 @@ st.markdown("""
 }
 
 /* ── Global ── */
-html,body,[class*="css"]{font-family:var(--font-d)!important;}
-code,[class*="mono"],.stCode{font-family:var(--font-m)!important;}
+html, body, .stApp, .main, section { font-family: var(--font-d) !important; }
+.stMarkdown p, .stMarkdown span, .stMarkdown div { font-family: var(--font-d) !important; }
+code, pre { font-family: var(--font-m) !important; }
 #MainMenu,footer,.stDeployButton{visibility:hidden;}
 .stApp{background:var(--bg);}
 
