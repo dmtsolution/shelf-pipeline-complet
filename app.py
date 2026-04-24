@@ -1,3 +1,4 @@
+# app.py — SKU Recognition Pipeline · Streamlit · YOLO + MobileNetV3
 import streamlit as st
 import torch
 import torch.nn as nn
@@ -72,10 +73,10 @@ def prepare_crop(img_np, target=224, upscale=2.5):
         img_np = cv2.resize(img_np, (nw,nh), interpolation=cv2.INTER_CUBIC)
         h, w = nh, nw
     ratio = w/h
-    nw2,nh2 = (target,int(target/ratio)) if ratio>1 else (int(target*ratio),target)
+    nw2, nh2 = (target, int(target/ratio)) if ratio>1 else (int(target*ratio), target)
     r = cv2.resize(img_np, (nw2,nh2), interpolation=cv2.INTER_LANCZOS4)
     sq = np.full((target,target,3), 128, dtype=np.uint8)
-    yo,xo = (target-nh2)//2, (target-nw2)//2
+    yo, xo = (target-nh2)//2, (target-nw2)//2
     sq[yo:yo+nh2, xo:xo+nw2] = r
     return sq
 
@@ -86,7 +87,7 @@ def predict_sku(model, img_np, idx_to_class, upscale=2.5):
         probs = torch.softmax(model(t), dim=1)[0]
         topk  = probs.topk(min(5, len(idx_to_class)))
     skus  = [idx_to_class[i.item()] for i in topk.indices]
-    confs = [v.item()               for v in topk.values]
+    confs = [v.item() for v in topk.values]
     return skus, confs
 
 def np_to_bytes(img_np):
@@ -177,7 +178,6 @@ def conf_cls(c):
     return "cv"
 
 def render_annotated_image(raw_bytes, annotated_np, crops_data, detections):
-    """Annotated image with clickable bounding boxes → fixed panel (no scroll)."""
     ann_bytes = np_to_bytes(annotated_np)
     ann_h, ann_w = annotated_np.shape[:2]
 
@@ -192,12 +192,12 @@ def render_annotated_image(raw_bytes, annotated_np, crops_data, detections):
         hp = (y2 - y1) / ann_h * 100
         cc = conf_cls(cd['stage2_conf'])
         bbox_zones += (
-            f'<div class="bbox-z {cc}" '
-            f'style="left:{lp:.2f}%;top:{tp:.2f}%;width:{wp:.2f}%;height:{hp:.2f}%;" '
-            f'onclick="openBboxPanel({i})" title="{cd[\'stage2_nom\']}"></div>'
+            '<div class="bbox-z ' + cc + '" '
+            'style="left:' + f"{lp:.2f}" + '%;top:' + f"{tp:.2f}" + '%;width:' + f"{wp:.2f}" + '%;height:' + f"{hp:.2f}" + '%;" '
+            'onclick="openBboxPanel(' + str(i) + ')" title="' + cd['stage2_nom'] + '"></div>'
         )
         panel_data.append({
-            "img":  f"data:image/jpeg;base64,{b64(cd['crop_bytes'])}",
+            "img":  "data:image/jpeg;base64," + b64(cd['crop_bytes']),
             "nom":  cd['stage2_nom'],
             "sku":  cd['stage2_sku'],
             "conf": round(cd['stage2_conf'], 3),
@@ -211,119 +211,100 @@ def render_annotated_image(raw_bytes, annotated_np, crops_data, detections):
 
     data_json = json.dumps(panel_data, ensure_ascii=False)
 
-    return f"""
-<div class="result-images">
-  <div class="result-card">
-    <div class="result-card-header">Image originale</div>
-    <img src="data:image/jpeg;base64,{b64(raw_bytes)}" style="width:100%;display:block;" alt="">
-  </div>
-  <div class="result-card">
-    <div class="result-card-header">Résultat annoté <span>· cliquer sur un produit</span></div>
-    <div style="position:relative;line-height:0;cursor:crosshair;">
-      <img src="data:image/jpeg;base64,{b64(ann_bytes)}" style="width:100%;display:block;" alt="">
-      {bbox_zones}
-    </div>
-  </div>
-</div>
+    html = '<div class="result-images">'
+    html += '<div class="result-card"><div class="result-card-header">Image originale</div>'
+    html += '<img src="data:image/jpeg;base64,' + b64(raw_bytes) + '" style="width:100%;display:block;" alt=""></div>'
+    html += '<div class="result-card"><div class="result-card-header">Résultat annoté <span>· cliquer sur un produit</span></div>'
+    html += '<div style="position:relative;line-height:0;cursor:crosshair;">'
+    html += '<img src="data:image/jpeg;base64,' + b64(ann_bytes) + '" style="width:100%;display:block;" alt="">'
+    html += bbox_zones
+    html += '</div></div></div>'
 
-<div id="bpanel" class="bpanel">
-  <div class="bpanel-hdr">
-    <span class="bpanel-title">Détail produit</span>
-    <button class="bpanel-close" onclick="closeBboxPanel()">&#x2715;</button>
-  </div>
-  <div id="bpanel-body" class="bpanel-body"></div>
-</div>
+    html += '<div id="bpanel" class="bpanel">'
+    html += '<div class="bpanel-hdr"><span class="bpanel-title">Détail produit</span>'
+    html += '<button class="bpanel-close" onclick="closeBboxPanel()">&#x2715;</button></div>'
+    html += '<div id="bpanel-body" class="bpanel-body"></div></div>'
 
-<script>
-(function(){{
-  var D={data_json};
-  var CC={{ch:'#059669',cm:'#D97706',cl:'#EA580C',cv:'#DC2626'}};
-  window.openBboxPanel=function(i){{
-    var d=D[i]; var col=CC[d.cc]||'#2563EB';
-    var pct=(d.conf*100).toFixed(1)+'%';
-    document.getElementById('bpanel-body').innerHTML=
-      '<div class="bp-top">'+
-        '<img src="'+d.img+'" class="bp-img">'+
-        '<div class="bp-info">'+
-          '<div class="bp-name">'+d.nom+'</div>'+
-          '<div class="bp-sku">'+d.sku+'</div>'+
-          '<div class="bp-conf" style="color:'+col+'">'+pct+'</div>'+
-        '</div>'+
-      '</div>'+
-      '<div class="bp-fields">'+
-        '<div class="bp-row"><span class="bp-k">Stage 1</span><span class="bp-v">'+d.stage1+'</span></div>'+
-        '<div class="bp-row"><span class="bp-k">Marque</span><span class="bp-v">'+d.brand+'</span></div>'+
-        '<div class="bp-row"><span class="bp-k">Capacité</span><span class="bp-v">'+d.capacity+'</span></div>'+
-        '<div class="bp-row"><span class="bp-k">Emballage</span><span class="bp-v">'+d.emballage+'</span></div>'+
-        '<div class="bp-row"><span class="bp-k">Saveur</span><span class="bp-v">'+d.saveur+'</span></div>'+
-      '</div>'+
-      '<div class="bp-bar-wrap"><div class="bp-track"><div class="bp-fill" style="width:'+pct+';background:'+col+'"></div></div></div>';
-    document.getElementById('bpanel').style.display='block';
-  }};
-  window.closeBboxPanel=function(){{
-    document.getElementById('bpanel').style.display='none';
-  }};
-  document.addEventListener('keydown',function(e){{if(e.key==='Escape')window.closeBboxPanel();}});
-}})();
-</script>"""
+    html += '<script>(function(){'
+    html += 'var D=' + data_json + ';'
+    html += 'var CC={ch:"#059669",cm:"#D97706",cl:"#EA580C",cv:"#DC2626"};'
+    html += 'window.openBboxPanel=function(i){'
+    html += 'var d=D[i]; var col=CC[d.cc]||"#2563EB";'
+    html += 'var pct=(d.conf*100).toFixed(1)+"%";'
+    html += 'document.getElementById("bpanel-body").innerHTML='
+    html += '"<div class=\"bp-top\">"'
+    html += '+"<img src=\""+d.img+"\" class=\"bp-img\">"'
+    html += '+"<div class=\"bp-info\">"'
+    html += '+"<div class=\"bp-name\">"+d.nom+"</div>"'
+    html += '+"<div class=\"bp-sku\">"+d.sku+"</div>"'
+    html += '+"<div class=\"bp-conf\" style=\"color:"+col+"\">"+pct+"</div>"'
+    html += '+"</div></div>"'
+    html += '+"<div class=\"bp-fields\">"'
+    html += '+"<div class=\"bp-row\"><span class=\"bp-k\">Stage 1</span><span class=\"bp-v\">"+d.stage1+"</span></div>"'
+    html += '+"<div class=\"bp-row\"><span class=\"bp-k\">Marque</span><span class=\"bp-v\">"+d.brand+"</span></div>"'
+    html += '+"<div class=\"bp-row\"><span class=\"bp-k\">Capacité</span><span class=\"bp-v\">"+d.capacity+"</span></div>"'
+    html += '+"<div class=\"bp-row\"><span class=\"bp-k\">Emballage</span><span class=\"bp-v\">"+d.emballage+"</span></div>"'
+    html += '+"<div class=\"bp-row\"><span class=\"bp-k\">Saveur</span><span class=\"bp-v\">"+d.saveur+"</span></div>"'
+    html += '+"</div>"'
+    html += '+"<div class=\"bp-bar-wrap\"><div class=\"bp-track\"><div class=\"bp-fill\" style=\"width:"+pct+";background:"+col+"\"></div></div></div>";'
+    html += 'document.getElementById("bpanel").style.display="block";};'
+    html += 'window.closeBboxPanel=function(){document.getElementById("bpanel").style.display="none";};'
+    html += 'document.addEventListener("keydown",function(e){if(e.key==="Escape")window.closeBboxPanel();});'
+    html += '})();</script>'
+    return html
 
 def render_metrics(total, hi, me, lo, vl):
-    return f"""
-<div class="metrics-row">
-  <div class="metric metric-total"><div class="metric-val">{total}</div><div class="metric-lbl">Détections</div></div>
-  <div class="metric metric-high"><div class="metric-val">{hi}</div><div class="metric-lbl">Haute &gt; 70%</div></div>
-  <div class="metric metric-med"><div class="metric-val">{me}</div><div class="metric-lbl">Moyenne 40–70%</div></div>
-  <div class="metric metric-low"><div class="metric-val">{lo}</div><div class="metric-lbl">Faible 20–40%</div></div>
-  <div class="metric metric-vlow"><div class="metric-val">{vl}</div><div class="metric-lbl">Très faible &lt; 20%</div></div>
-</div>"""
+    html = '<div class="metrics-row">'
+    html += '<div class="metric metric-total"><div class="metric-val">' + str(total) + '</div><div class="metric-lbl">Détections</div></div>'
+    html += '<div class="metric metric-high"><div class="metric-val">' + str(hi) + '</div><div class="metric-lbl">Haute &gt; 70%</div></div>'
+    html += '<div class="metric metric-med"><div class="metric-val">' + str(me) + '</div><div class="metric-lbl">Moyenne 40–70%</div></div>'
+    html += '<div class="metric metric-low"><div class="metric-val">' + str(lo) + '</div><div class="metric-lbl">Faible 20–40%</div></div>'
+    html += '<div class="metric metric-vlow"><div class="metric-val">' + str(vl) + '</div><div class="metric-lbl">Très faible &lt; 20%</div></div>'
+    html += '</div>'
+    return html
 
 def render_detection_card(cd, rank):
     cc   = conf_cls(cd['stage2_conf'])
     conf = cd['stage2_conf']
-    img  = f"data:image/jpeg;base64,{b64(cd['crop_bytes'])}"
-    brand_pill = (f'<span class="pill pill-b">{cd["brand"]}</span>'
-                  if cd['brand'] != 'N/A' else '')
-    top5_rows = "".join(
-        f'<div class="top5-item"><span class="top5-i">{j+1}</span>'
-        f'<span class="top5-s">{s}</span>'
-        f'<span class="top5-c">{c:.1%}</span></div>'
-        for j,(s,c) in enumerate(cd['top5'][:5])
-    )
-    return f"""
-<div class="det-card {cc}" onclick="this.classList.toggle('open')">
-  <div class="det-row">
-    <img class="det-thumb" src="{img}" alt="">
-    <div class="det-body">
-      <div class="det-name">{cd['stage2_nom']}</div>
-      <div class="det-pills">
-        <span class="pill pill-f">{cd['stage1'].split('(')[0].strip()}</span>
-        <span class="pill pill-s">{cd['stage2_sku']}</span>
-        {brand_pill}
-      </div>
-    </div>
-    <div class="det-pct">{conf:.0%}</div>
-    <div class="det-chevron">&#9658;</div>
-  </div>
-  <div class="det-expand">
-    <div class="det-expand-inner">
-      <img class="det-large-img" src="{img}" alt="">
-      <div class="det-fields">
-        <div class="det-field"><span class="det-fk">Stage 1</span><span class="det-fv">{cd['stage1']}</span></div>
-        <div class="det-field"><span class="det-fk">SKU</span><span class="det-fv" style="color:var(--blue)">{cd['stage2_sku']}</span></div>
-        <div class="det-field"><span class="det-fk">Produit</span><span class="det-fv">{cd['stage2_nom']}</span></div>
-        <div class="det-field"><span class="det-fk">Marque</span><span class="det-fv">{cd['brand']}</span></div>
-        <div class="det-field"><span class="det-fk">Capacité</span><span class="det-fv">{cd['capacity']}</span></div>
-        <div class="det-field"><span class="det-fk">Emballage</span><span class="det-fv">{cd['emballage']}</span></div>
-        <div class="det-field"><span class="det-fk">Saveur</span><span class="det-fv">{cd['saveur']}</span></div>
-        <div class="conf-bar-wrap {cc}">
-          <div class="conf-bar-lbl">Confiance · {conf:.1%}</div>
-          <div class="conf-bar-track"><div class="conf-bar-fill" style="width:{conf*100:.1f}%"></div></div>
-        </div>
-        <div class="top5"><div class="top5-title">Top 5 prédictions</div>{top5_rows}</div>
-      </div>
-    </div>
-  </div>
-</div>"""
+    img  = "data:image/jpeg;base64," + b64(cd['crop_bytes'])
+    brand_pill = ('<span class="pill pill-b">' + cd["brand"] + '</span>' if cd['brand'] != 'N/A' else '')
+    
+    top5_rows = ""
+    for j, (s, c) in enumerate(cd['top5'][:5]):
+        top5_rows += '<div class="top5-item"><span class="top5-i">' + str(j+1) + '</span>'
+        top5_rows += '<span class="top5-s">' + s + '</span>'
+        top5_rows += '<span class="top5-c">' + f"{c:.1%}" + '</span></div>'
+    
+    nom_produit = str(cd['stage2_nom']).replace("'", "\\'").replace('"', '&quot;')
+    
+    html = '<div class="det-card ' + cc + '" onclick="this.classList.toggle(\'open\')">'
+    html += '<div class="det-row">'
+    html += '<img class="det-thumb" src="' + img + '" alt="">'
+    html += '<div class="det-body">'
+    html += '<div class="det-name">' + nom_produit + '</div>'
+    html += '<div class="det-pills">'
+    html += '<span class="pill pill-f">' + cd['stage1'].split('(')[0].strip() + '</span>'
+    html += '<span class="pill pill-s">' + cd['stage2_sku'] + '</span>'
+    html += brand_pill
+    html += '</div></div>'
+    html += '<div class="det-pct">' + f"{conf:.0%}" + '</div>'
+    html += '<div class="det-chevron">&#9658;</div></div>'
+    html += '<div class="det-expand"><div class="det-expand-inner">'
+    html += '<img class="det-large-img" src="' + img + '" alt="">'
+    html += '<div class="det-fields">'
+    html += '<div class="det-field"><span class="det-fk">Stage 1</span><span class="det-fv">' + cd['stage1'] + '</span></div>'
+    html += '<div class="det-field"><span class="det-fk">SKU</span><span class="det-fv" style="color:var(--blue)">' + cd['stage2_sku'] + '</span></div>'
+    html += '<div class="det-field"><span class="det-fk">Produit</span><span class="det-fv">' + nom_produit + '</span></div>'
+    html += '<div class="det-field"><span class="det-fk">Marque</span><span class="det-fv">' + cd['brand'] + '</span></div>'
+    html += '<div class="det-field"><span class="det-fk">Capacité</span><span class="det-fv">' + cd['capacity'] + '</span></div>'
+    html += '<div class="det-field"><span class="det-fk">Emballage</span><span class="det-fv">' + cd['emballage'] + '</span></div>'
+    html += '<div class="det-field"><span class="det-fk">Saveur</span><span class="det-fv">' + cd['saveur'] + '</span></div>'
+    html += '<div class="conf-bar-wrap ' + cc + '">'
+    html += '<div class="conf-bar-lbl">Confiance · ' + f"{conf:.1%}" + '</div>'
+    html += '<div class="conf-bar-track"><div class="conf-bar-fill" style="width:' + f"{conf*100:.1f}" + '%"></div></div></div>'
+    html += '<div class="top5"><div class="top5-title">Top 5 prédictions</div>' + top5_rows + '</div>'
+    html += '</div></div></div></div>'
+    return html
 
 def render_results_section(crops_data, detections, raw_bytes, annotated_np):
     hi = sum(1 for c in crops_data if c['stage2_conf'] > 0.7)
@@ -331,59 +312,61 @@ def render_results_section(crops_data, detections, raw_bytes, annotated_np):
     lo = sum(1 for c in crops_data if 0.2 < c['stage2_conf'] <= 0.4)
     vl = sum(1 for c in crops_data if c['stage2_conf'] <= 0.2)
     sorted_crops = sorted(crops_data, key=lambda x: x['stage2_conf'], reverse=True)
-    cards_html = "\n".join(render_detection_card(cd, i) for i, cd in enumerate(sorted_crops))
+    
+    cards_html = ""
+    for i, cd in enumerate(sorted_crops):
+        cards_html += render_detection_card(cd, i)
+    
     rows_html = ""
     for d in detections:
-        col = ("var(--green)" if d['confiance_sku'] > 0.7
-               else "var(--amber)" if d['confiance_sku'] > 0.4
-               else "var(--red)")
-        rows_html += (f'<tr><td class="td-name">{d["nom_produit"]}</td>'
-                      f'<td>{d["brand"]}</td><td>{d["capacity"]}</td>'
-                      f'<td>{d["emballage"]}</td><td>{d["saveur"]}</td>'
-                      f'<td>{d["famille"]}</td>'
-                      f'<td style="color:{col};font-weight:700">{d["confiance_sku"]:.1%}</td>'
-                      f'<td>{d["confiance_detection"]:.1%}</td>'
-                      f'<td class="td-sku">{d["sku"]}</td></tr>')
-    return f"""
-{render_annotated_image(raw_bytes, annotated_np, crops_data, detections)}
-{render_metrics(len(crops_data), hi, me, lo, vl)}
-<div class="detections-section">
-  <div class="section-title">Détections <span>· {len(crops_data)} produit{"s" if len(crops_data)!=1 else ""} — cliquer pour développer</span></div>
-  <div class="detections-stack">{cards_html}</div>
-</div>
-<div class="tbl-section">
-  <div class="section-title">Rapport complet</div>
-  <div class="tbl-wrap">
-    <table>
-      <thead><tr>
-        <th>Produit</th><th>Marque</th><th>Capacité</th><th>Emballage</th>
-        <th>Saveur</th><th>Famille</th><th>Conf. SKU</th><th>Conf. Dét.</th><th>SKU ID</th>
-      </tr></thead>
-      <tbody>{rows_html}</tbody>
-    </table>
-  </div>
-</div>"""
+        if d['confiance_sku'] > 0.7:
+            col = "var(--green)"
+        elif d['confiance_sku'] > 0.4:
+            col = "var(--amber)"
+        else:
+            col = "var(--red)"
+        rows_html += ('<tr><td class="td-name">' + d["nom_produit"] + '</td>'
+                      '<td>' + d["brand"] + '</td><td>' + d["capacity"] + '</td>'
+                      '<td>' + d["emballage"] + '</td><td>' + d["saveur"] + '</td>'
+                      '<td>' + d["famille"] + '</td>'
+                      '<td style="color:' + col + ';font-weight:700">' + f"{d['confiance_sku']:.1%}" + '</td>'
+                      '<td>' + f"{d['confiance_detection']:.1%}" + '</td>'
+                      '<td class="td-sku">' + d["sku"] + '</td></tr>')
+    
+    html = render_annotated_image(raw_bytes, annotated_np, crops_data, detections)
+    html += render_metrics(len(crops_data), hi, me, lo, vl)
+    html += '<div class="detections-section">'
+    html += '<div class="section-title">Détections <span>· ' + str(len(crops_data)) + ' produit' + ("s" if len(crops_data)!=1 else "") + ' — cliquer pour développer</span></div>'
+    html += '<div class="detections-stack">' + cards_html + '</div></div>'
+    html += '<div class="tbl-section"><div class="section-title">Rapport complet</div>'
+    html += '<div class="tbl-wrap"><table><thead><tr>'
+    html += '<th>Produit</th><th>Marque</th><th>Capacité</th><th>Emballage</th>'
+    html += '<th>Saveur</th><th>Famille</th><th>Conf. SKU</th><th>Conf. Dét.</th><th>SKU ID</th>'
+    html += '</tr></thead><tbody>' + rows_html + '</tbody></table></div></div>'
+    return html
 
 def render_inv_card(item):
     conf = item['conf']
-    col = ("var(--green)" if conf > 0.7 else "var(--amber)" if conf > 0.4
-           else "var(--orange)" if conf > 0.2 else "var(--red)")
-    return f"""
-<div class="inv-card">
-  <img class="inv-card-img" src="data:image/jpeg;base64,{b64(item['crop_bytes'])}" alt="">
-  <div class="inv-card-name" title="{item['nom']}">{item['nom']}</div>
-  <div class="inv-card-sku">{item['sku']}</div>
-  <div class="inv-card-conf" style="color:{col}">{conf:.1%}</div>
-</div>"""
+    if conf > 0.7:
+        col = "var(--green)"
+    elif conf > 0.4:
+        col = "var(--amber)"
+    elif conf > 0.2:
+        col = "var(--orange)"
+    else:
+        col = "var(--red)"
+    html = '<div class="inv-card">'
+    html += '<img class="inv-card-img" src="data:image/jpeg;base64,' + b64(item['crop_bytes']) + '" alt="">'
+    html += '<div class="inv-card-name" title="' + item['nom'] + '">' + item['nom'] + '</div>'
+    html += '<div class="inv-card-sku">' + item['sku'] + '</div>'
+    html += '<div class="inv-card-conf" style="color:' + col + '">' + f"{conf:.1%}" + '</div>'
+    html += '</div>'
+    return html
 
 # ══════════════════════════════════════════════════════
 # PAGE CONFIG
 # ══════════════════════════════════════════════════════
-st.set_page_config(
-    page_title="SKU Recognition",
-    page_icon="", layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="SKU Recognition", page_icon="🏪", layout="wide", initial_sidebar_state="expanded")
 
 # ══════════════════════════════════════════════════════
 # FONTS
@@ -395,7 +378,7 @@ st.markdown(
 )
 
 # ══════════════════════════════════════════════════════
-# CSS
+# CSS (same as before, no f-string backslash issues)
 # ══════════════════════════════════════════════════════
 st.markdown("""
 <style>
@@ -422,10 +405,8 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
 [data-testid="stVerticalBlock"]{font-family:var(--font)!important;}
 .stApp{background:var(--bg)!important;}
 
-/* ── No top padding on main area ── */
 .main .block-container{padding-top:12px!important;}
 
-/* ── Light sidebar ── */
 [data-testid="stSidebar"]{
   background:var(--surface)!important;
   border-right:1px solid var(--border)!important;
@@ -440,7 +421,6 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
   box-shadow:0 0 0 4px rgba(37,99,235,.18)!important;
 }
 
-/* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"]{
   background:var(--surface)!important;border:1px solid var(--border)!important;
   border-radius:var(--r)!important;padding:4px!important;gap:2px!important;
@@ -457,7 +437,6 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
 .stTabs [aria-selected="false"]:hover{background:var(--surface-2)!important;color:var(--text-2)!important;}
 .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important;}
 
-/* ── Buttons ── */
 .stButton>button{
   font-family:var(--font)!important;font-size:13px!important;font-weight:500!important;
   border-radius:var(--r-sm)!important;padding:8px 16px!important;border:none!important;
@@ -472,7 +451,6 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
   border:1px solid var(--border-2)!important;box-shadow:var(--sh)!important;
 }
 
-/* ── Download ── */
 [data-testid="stDownloadButton"]>button{
   font-family:var(--font)!important;font-size:13px!important;font-weight:500!important;
   background:var(--surface)!important;color:var(--text-2)!important;
@@ -481,7 +459,6 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
 }
 [data-testid="stDownloadButton"]>button:hover{background:var(--surface-2)!important;transform:translateY(-1px)!important;}
 
-/* ── File uploader ── */
 [data-testid="stFileUploaderDropzone"]{
   border:1.5px dashed var(--border-2)!important;border-radius:var(--r-lg)!important;
   padding:36px 28px!important;background:var(--surface)!important;
@@ -492,19 +469,14 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
   box-shadow:0 0 0 3px var(--blue-border),var(--sh)!important;
 }
 [data-testid="stFileUploaderDropzone"] span{font-family:var(--font)!important;color:var(--text-muted)!important;}
-/* Hide duplicate upload label */
 [data-testid="stFileUploaderDropzone"] + div > span{display:none!important;}
 
-/* ── Camera ── */
 [data-testid="stCameraInput"] video,
 [data-testid="stCameraInput"] img{border-radius:var(--r)!important;}
-/* Hide camera label */
 [data-testid="stCameraInput"] label{display:none!important;}
 
-/* ── Progress ── */
 [data-testid="stProgressBar"]>div>div{background:var(--blue)!important;border-radius:4px!important;}
 
-/* ── HR ── */
 hr{border:none!important;border-top:1px solid var(--border)!important;margin:24px 0!important;}
 
 /* ═══════ SIDEBAR ═══════ */
@@ -561,7 +533,6 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:24p
 .result-card-header{padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.04em;text-transform:uppercase;}
 .result-card-header span{font-weight:400;color:var(--text-subtle);text-transform:none;letter-spacing:0;}
 
-/* Bbox zones */
 .bbox-z{
   position:absolute;border:2px solid transparent;
   border-radius:3px;cursor:pointer;transition:background .12s;
@@ -573,7 +544,6 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:24p
 .bbox-z.cv{border-color:rgba(220,38,38,.85);}
 .bbox-z:hover{background:rgba(255,255,255,.18);}
 
-/* Bbox floating panel */
 .bpanel{
   display:none;position:fixed;top:50%;right:24px;transform:translateY(-50%);
   width:296px;background:var(--surface);border:1px solid var(--border);
@@ -684,7 +654,6 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:24p
 .inv-card-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;}
 .inv-card-sku{font-size:10px;color:var(--blue);font-family:var(--font-mono);margin-bottom:4px;word-break:break-all;}
 .inv-card-conf{font-size:11px;font-weight:700;font-family:var(--font-mono);margin-bottom:10px;}
-/* Spacing between card and its action buttons */
 .inv-btn-row{padding-top:2px;}
 
 /* ═══════ CAMERA ═══════ */
@@ -697,7 +666,6 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:24p
 }
 .cam-placeholder-title{font-size:13px;font-weight:500;color:var(--text-muted);}
 .cam-placeholder-sub{font-size:12px;}
-/* Camera facing toggle */
 .cam-facing-row{display:flex;gap:8px;margin-bottom:12px;justify-content:center;}
 
 /* ═══════ EMPTY STATE ═══════ */
@@ -775,13 +743,16 @@ with st.sidebar:
 
     st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sb-section">Fichiers modèles</div>', unsafe_allow_html=True)
-    st.markdown(f"""
-    <div class="sb-files">
-      <div class="sb-file-row"><span class="sb-file-key">YOLO</span><span class="sb-file-val">{YOLO_MODEL_PATH}</span></div>
-      <div class="sb-file-row"><span class="sb-file-key">SKU</span><span class="sb-file-val">{SKU_MODEL_PATH}</span></div>
-      <div class="sb-file-row"><span class="sb-file-key">Labels</span><span class="sb-file-val">{MAPPING_PATH}</span></div>
-      <div class="sb-file-row"><span class="sb-file-key">Catalog</span><span class="sb-file-val">{CSV_PATH}</span></div>
-    </div>""", unsafe_allow_html=True)
+    
+    sb_files_html = (
+        '<div class="sb-files">'
+        '<div class="sb-file-row"><span class="sb-file-key">YOLO</span><span class="sb-file-val">' + YOLO_MODEL_PATH + '</span></div>'
+        '<div class="sb-file-row"><span class="sb-file-key">SKU</span><span class="sb-file-val">' + SKU_MODEL_PATH + '</span></div>'
+        '<div class="sb-file-row"><span class="sb-file-key">Labels</span><span class="sb-file-val">' + MAPPING_PATH + '</span></div>'
+        '<div class="sb-file-row"><span class="sb-file-key">Catalog</span><span class="sb-file-val">' + CSV_PATH + '</span></div>'
+        '</div>'
+    )
+    st.markdown(sb_files_html, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
 # LOAD MODELS
@@ -793,7 +764,7 @@ try:
     sku_catalog, _ = load_sku_catalog(CSV_PATH)
     models_ok = True
     _status_slot.markdown(
-        f'<div class="status-pill s-ok"><div class="status-dot"></div>Prêt &nbsp;·&nbsp; {num_classes} SKU</div>',
+        '<div class="status-pill s-ok"><div class="status-dot"></div>Prêt &nbsp;·&nbsp; ' + str(num_classes) + ' SKU</div>',
         unsafe_allow_html=True
     )
 except Exception as exc:
@@ -801,7 +772,7 @@ except Exception as exc:
         '<div class="status-pill s-err"><div class="status-dot"></div>Erreur chargement</div>',
         unsafe_allow_html=True
     )
-    st.error(f"{exc}")
+    st.error(str(exc))
 
 # ══════════════════════════════════════════════════════
 # PAGE HEADER
@@ -813,26 +784,25 @@ st.markdown("""
 </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
-# HELPER — camera facing JS injector
+# CAMERA FACING JS
 # ══════════════════════════════════════════════════════
 def inject_cam_facing(selector_key, facing):
-    """Injects JS to switch camera facing mode. facing = 'environment' or 'user'."""
-    st.markdown(f"""<script>
-(function(){{
-  var _f='{facing}';
-  function _sw(){{
-    var v=document.querySelector('[data-testid="stCameraInput"] video');
-    if(!v||!v.srcObject){{setTimeout(_sw,350);return;}}
-    if(window.__camFacing_{selector_key}===_f)return;
-    window.__camFacing_{selector_key}=_f;
-    v.srcObject.getTracks().forEach(function(t){{t.stop();}});
-    navigator.mediaDevices.getUserMedia({{video:{{facingMode:{{exact:_f}}}},audio:false}})
-    .catch(function(){{return navigator.mediaDevices.getUserMedia({{video:{{facingMode:_f}},audio:false}});}})
-    .then(function(s){{if(v&&v.isConnected)v.srcObject=s;}});
-  }}
-  _sw();
-}})();
-</script>""", unsafe_allow_html=True)
+    js_code = (
+        '<script>(function(){'
+        'var _f="' + facing + '";'
+        'function _sw(){'
+        'var v=document.querySelector(\'[data-testid="stCameraInput"] video\');'
+        'if(!v||!v.srcObject){setTimeout(_sw,350);return;}'
+        'if(window.__camFacing_' + selector_key + '===_f)return;'
+        'window.__camFacing_' + selector_key + '=_f;'
+        'v.srcObject.getTracks().forEach(function(t){t.stop();});'
+        'navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:_f}},audio:false})'
+        '.catch(function(){return navigator.mediaDevices.getUserMedia({video:{facingMode:_f},audio:false});})'
+        '.then(function(s){if(v&&v.isConnected)v.srcObject=s;});'
+        '}_sw();'
+        '})();</script>'
+    )
+    st.markdown(js_code, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
 # MAIN TABS
@@ -840,13 +810,11 @@ def inject_cam_facing(selector_key, facing):
 tab_up, tab_cam, tab_inv = st.tabs(["Upload", "Caméra", "Inventaire"])
 
 # ╔══════════════════════════════════════════════════════╗
-# ║  TAB 1 — UPLOAD (multi-session)                     ║
+# ║  TAB 1 — UPLOAD                                     ║
 # ╚══════════════════════════════════════════════════════╝
 with tab_up:
-    # File uploader — key resets after each processed upload so dropzone stays clean
     uploaded = st.file_uploader(
-        "",
-        type=["jpg","jpeg","png"],
+        "", type=["jpg","jpeg","png"],
         key=f"main_up_{st.session_state.upload_key}",
         label_visibility="collapsed"
     )
@@ -855,7 +823,7 @@ with tab_up:
         raw = uploaded.getvalue()
         fhash = hash(raw[:2048] + uploaded.name.encode())
         if fhash not in st.session_state.proc_hashes:
-            with st.spinner("Analyse en cours…"):
+            with st.spinner("Analyse en cours..."):
                 ann, dets, crops = run_pipeline(
                     raw, yolo_model, sku_model, idx_to_class, sku_catalog,
                     conf_threshold, upscale_factor, display_threshold
@@ -868,27 +836,22 @@ with tab_up:
             st.session_state.sessions.append(sess)
             st.session_state.active_sess_id = sess['id']
             st.session_state.proc_hashes.add(fhash)
-            st.session_state.upload_key += 1   # reset dropzone
+            st.session_state.upload_key += 1
             st.rerun()
 
-    # ── Session navigation : [name][✕] per session ──────
+    # Session navigation
     if st.session_state.sessions:
         n = min(len(st.session_state.sessions), 5)
-        # Build column widths: 4 for name, 1 for ✕, repeated
         col_widths = []
-        for _ in range(n):
-            col_widths += [4, 1]
+        for _ in range(n): col_widths += [4, 1]
         nav_cols = st.columns(col_widths)
 
         to_remove = None
         for i, sess in enumerate(st.session_state.sessions[:5]):
             active = sess['id'] == st.session_state.active_sess_id
             with nav_cols[i * 2]:
-                if st.button(
-                    sess['name'], key=f"sn_{sess['id']}",
-                    use_container_width=True,
-                    type="primary" if active else "secondary"
-                ):
+                if st.button(sess['name'], key=f"sn_{sess['id']}", use_container_width=True,
+                            type="primary" if active else "secondary"):
                     st.session_state.active_sess_id = sess['id']
                     st.rerun()
             with nav_cols[i * 2 + 1]:
@@ -896,37 +859,26 @@ with tab_up:
                     to_remove = sess['id']
 
         if to_remove is not None:
-            st.session_state.sessions = [
-                s for s in st.session_state.sessions if s['id'] != to_remove
-            ]
+            st.session_state.sessions = [s for s in st.session_state.sessions if s['id'] != to_remove]
             if st.session_state.sessions:
                 st.session_state.active_sess_id = st.session_state.sessions[-1]['id']
             else:
                 st.session_state.active_sess_id = None
             st.rerun()
 
-        active_sess = next(
-            (s for s in st.session_state.sessions if s['id'] == st.session_state.active_sess_id),
-            None
-        )
+        active_sess = next((s for s in st.session_state.sessions if s['id'] == st.session_state.active_sess_id), None)
         if active_sess:
             st.markdown(
-                render_results_section(
-                    active_sess['crops'], active_sess['dets'],
-                    active_sess['raw'], active_sess['ann']
-                ),
+                render_results_section(active_sess['crops'], active_sess['dets'], active_sess['raw'], active_sess['ann']),
                 unsafe_allow_html=True
             )
             ts = datetime.now().strftime('%Y%m%d_%H%M%S')
             df = pd.DataFrame(active_sess['dets'])
             ec1, ec2 = st.columns(2)
             with ec1:
-                st.download_button("Exporter CSV", df.to_csv(index=False),
-                    f"detections_{ts}.csv", "text/csv", use_container_width=True)
+                st.download_button("Exporter CSV", df.to_csv(index=False), f"detections_{ts}.csv", "text/csv", use_container_width=True)
             with ec2:
-                st.download_button("Exporter JSON",
-                    json.dumps(active_sess['dets'], indent=2, ensure_ascii=False, default=str),
-                    f"detections_{ts}.json", "application/json", use_container_width=True)
+                st.download_button("Exporter JSON", json.dumps(active_sess['dets'], indent=2, ensure_ascii=False, default=str), f"detections_{ts}.json", "application/json", use_container_width=True)
 
 # ╔══════════════════════════════════════════════════════╗
 # ║  TAB 2 — CAMERA                                      ║
@@ -946,25 +898,18 @@ with tab_cam:
                 st.session_state.cam_active = True
                 st.rerun()
     else:
-        # ── Camera facing toggle ──
         cf1, cf2, cf3 = st.columns([1, 1, 1])
         with cf1:
             is_back = (st.session_state.cam_facing == 'back')
-            if st.button("Caméra arrière", key="cam_back",
-                         type="primary" if is_back else "secondary",
-                         use_container_width=True):
+            if st.button("Caméra arrière", key="cam_back", type="primary" if is_back else "secondary", use_container_width=True):
                 st.session_state.cam_facing = 'back'
                 st.rerun()
         with cf2:
-            if st.button("Selfie", key="cam_front",
-                         type="primary" if not is_back else "secondary",
-                         use_container_width=True):
+            if st.button("Selfie", key="cam_front", type="primary" if not is_back else "secondary", use_container_width=True):
                 st.session_state.cam_facing = 'front'
                 st.rerun()
 
         cam_img = st.camera_input("", key="cam_input", label_visibility="collapsed")
-
-        # Inject facing-mode switcher
         facing_val = "environment" if st.session_state.cam_facing == 'back' else "user"
         inject_cam_facing("main", facing_val)
 
@@ -973,14 +918,10 @@ with tab_cam:
             st.button("Démarrer", key="cam_start2", disabled=True, use_container_width=True)
         with c2:
             if cam_img:
-                if st.button("Utiliser cette photo", key="cam_use",
-                             type="primary", use_container_width=True):
+                if st.button("Utiliser cette photo", key="cam_use", type="primary", use_container_width=True):
                     raw = cam_img.getvalue()
-                    with st.spinner("Analyse en cours…"):
-                        ann, dets, crops = run_pipeline(
-                            raw, yolo_model, sku_model, idx_to_class, sku_catalog,
-                            conf_threshold, upscale_factor, display_threshold
-                        )
+                    with st.spinner("Analyse en cours..."):
+                        ann, dets, crops = run_pipeline(raw, yolo_model, sku_model, idx_to_class, sku_catalog, conf_threshold, upscale_factor, display_threshold)
                     st.session_state.cam_result = {'raw':raw,'ann':ann,'dets':dets,'crops':crops}
                     st.session_state.cam_active = False
                     st.rerun()
@@ -993,20 +934,14 @@ with tab_cam:
 
     if 'cam_result' in st.session_state and st.session_state.cam_result:
         r = st.session_state.cam_result
-        st.markdown(
-            render_results_section(r['crops'], r['dets'], r['raw'], r['ann']),
-            unsafe_allow_html=True
-        )
+        st.markdown(render_results_section(r['crops'], r['dets'], r['raw'], r['ann']), unsafe_allow_html=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         df = pd.DataFrame(r['dets'])
         ec1, ec2 = st.columns(2)
         with ec1:
-            st.download_button("Exporter CSV", df.to_csv(index=False),
-                f"photo_{ts}.csv", "text/csv", use_container_width=True)
+            st.download_button("Exporter CSV", df.to_csv(index=False), f"photo_{ts}.csv", "text/csv", use_container_width=True)
         with ec2:
-            st.download_button("Exporter JSON",
-                json.dumps(r['dets'], indent=2, ensure_ascii=False, default=str),
-                f"photo_{ts}.json", "application/json", use_container_width=True)
+            st.download_button("Exporter JSON", json.dumps(r['dets'], indent=2, ensure_ascii=False, default=str), f"photo_{ts}.json", "application/json", use_container_width=True)
 
 # ╔══════════════════════════════════════════════════════╗
 # ║  TAB 3 — INVENTAIRE                                  ║
@@ -1015,18 +950,12 @@ with tab_inv:
     inv_s_up, inv_s_cam = st.tabs(["Upload produits", "Caméra"])
 
     with inv_s_up:
-        inv_files = st.file_uploader(
-            "",
-            type=["jpg","jpeg","png"], accept_multiple_files=True,
-            key=f"inv_up_{st.session_state.inv_upload_key}",
-            label_visibility="collapsed"
-        )
+        inv_files = st.file_uploader("", type=["jpg","jpeg","png"], accept_multiple_files=True,
+                                     key=f"inv_up_{st.session_state.inv_upload_key}", label_visibility="collapsed")
         if inv_files and models_ok:
             prog = st.progress(0)
             for i, f in enumerate(inv_files):
-                res = run_inventory_pipeline(
-                    f.read(), sku_model, idx_to_class, sku_catalog, upscale_factor
-                )
+                res = run_inventory_pipeline(f.read(), sku_model, idx_to_class, sku_catalog, upscale_factor)
                 res['id'] = st.session_state.inv_next_id
                 st.session_state.inv_next_id += 1
                 st.session_state.inv_pending.append(res)
@@ -1049,24 +978,18 @@ with tab_inv:
                     st.session_state.inv_cam_active = True
                     st.rerun()
         else:
-            # ── Camera facing toggle ──
             icf1, icf2, icf3 = st.columns([1, 1, 1])
             with icf1:
                 inv_is_back = (st.session_state.inv_cam_facing == 'back')
-                if st.button("Caméra arrière", key="inv_cam_back",
-                             type="primary" if inv_is_back else "secondary",
-                             use_container_width=True):
+                if st.button("Caméra arrière", key="inv_cam_back", type="primary" if inv_is_back else "secondary", use_container_width=True):
                     st.session_state.inv_cam_facing = 'back'
                     st.rerun()
             with icf2:
-                if st.button("Selfie", key="inv_cam_front",
-                             type="primary" if not inv_is_back else "secondary",
-                             use_container_width=True):
+                if st.button("Selfie", key="inv_cam_front", type="primary" if not inv_is_back else "secondary", use_container_width=True):
                     st.session_state.inv_cam_facing = 'front'
                     st.rerun()
 
             inv_cam = st.camera_input("", key="inv_cam_input", label_visibility="collapsed")
-
             inv_facing_val = "environment" if st.session_state.inv_cam_facing == 'back' else "user"
             inject_cam_facing("inv", inv_facing_val)
 
@@ -1074,12 +997,9 @@ with tab_inv:
             with ic1:
                 st.button("Démarrer", key="inv_cam_start2", disabled=True, use_container_width=True)
             with ic2:
-                if inv_cam and st.button("Capturer", key="inv_cam_use",
-                                         type="primary", use_container_width=True):
-                    with st.spinner("Classification…"):
-                        res = run_inventory_pipeline(
-                            inv_cam.getvalue(), sku_model, idx_to_class, sku_catalog, upscale_factor
-                        )
+                if inv_cam and st.button("Capturer", key="inv_cam_use", type="primary", use_container_width=True):
+                    with st.spinner("Classification..."):
+                        res = run_inventory_pipeline(inv_cam.getvalue(), sku_model, idx_to_class, sku_catalog, upscale_factor)
                         res['id'] = st.session_state.inv_next_id
                         st.session_state.inv_next_id += 1
                         st.session_state.inv_pending.append(res)
@@ -1091,7 +1011,7 @@ with tab_inv:
                     st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── Pending ──────────────────────────────────────────
+    # Pending
     pending = st.session_state.inv_pending
     st.markdown('<hr>', unsafe_allow_html=True)
 
@@ -1099,10 +1019,7 @@ with tab_inv:
         bh1, bh2, bh3 = st.columns([4, 1, 1])
         with bh1:
             n_p = len(pending)
-            st.markdown(
-                f'<div class="section-title">En attente <span>· {n_p} produit{"s" if n_p>1 else ""}</span></div>',
-                unsafe_allow_html=True
-            )
+            st.markdown('<div class="section-title">En attente <span>· ' + str(n_p) + ' produit' + ("s" if n_p>1 else "") + '</span></div>', unsafe_allow_html=True)
         with bh2:
             if st.button("Ajouter tout", use_container_width=True, type="primary", key="add_all"):
                 st.session_state.inv_validated.extend(st.session_state.inv_pending)
@@ -1119,15 +1036,12 @@ with tab_inv:
             for col_el, item in zip(cols, row_items):
                 with col_el:
                     st.markdown(render_inv_card(item), unsafe_allow_html=True)
-                    # Spacing + buttons in same column
                     ba, bb = st.columns(2)
                     with ba:
-                        if st.button("Ajouter", key=f"ia_{item['id']}",
-                                     use_container_width=True, type="primary"):
+                        if st.button("Ajouter", key=f"ia_{item['id']}", use_container_width=True, type="primary"):
                             to_add.append(item['id'])
                     with bb:
-                        if st.button("Retirer", key=f"id_{item['id']}",
-                                     use_container_width=True, type="secondary"):
+                        if st.button("Retirer", key=f"id_{item['id']}", use_container_width=True, type="secondary"):
                             to_del.append(item['id'])
                     st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
 
@@ -1136,14 +1050,10 @@ with tab_inv:
                 obj = next((x for x in st.session_state.inv_pending if x['id'] == iid), None)
                 if obj:
                     st.session_state.inv_validated.append(obj)
-                    st.session_state.inv_pending = [
-                        x for x in st.session_state.inv_pending if x['id'] != iid
-                    ]
+                    st.session_state.inv_pending = [x for x in st.session_state.inv_pending if x['id'] != iid]
             st.rerun()
         if to_del:
-            st.session_state.inv_pending = [
-                x for x in st.session_state.inv_pending if x['id'] not in to_del
-            ]
+            st.session_state.inv_pending = [x for x in st.session_state.inv_pending if x['id'] not in to_del]
             st.rerun()
     else:
         st.markdown("""
@@ -1152,16 +1062,13 @@ with tab_inv:
           <div class="empty-sub">Uploadez des photos ou utilisez la caméra pour scanner des produits</div>
         </div>""", unsafe_allow_html=True)
 
-    # ── Validated inventory ───────────────────────────────
+    # Validated
     st.markdown('<hr>', unsafe_allow_html=True)
     validated = st.session_state.inv_validated
     vh1, vh2 = st.columns([4, 1])
     with vh1:
         nv = len(validated)
-        st.markdown(
-            f'<div class="section-title">Inventaire validé <span>· {nv} produit{"s" if nv!=1 else ""}</span></div>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<div class="section-title">Inventaire validé <span>· ' + str(nv) + ' produit' + ("s" if nv!=1 else "") + '</span></div>', unsafe_allow_html=True)
     with vh2:
         if validated and st.button("Tout effacer", use_container_width=True, key="clear_inv"):
             st.session_state.inv_validated = []
@@ -1171,70 +1078,54 @@ with tab_inv:
         rows_html = ""
         for it in validated:
             conf = it['conf']
-            col = ("var(--green)" if conf > 0.7 else "var(--amber)" if conf > 0.4
-                   else "var(--orange)" if conf > 0.2 else "var(--red)")
-            rows_html += (f'<tr><td class="td-name">{it["nom"]}</td>'
-                          f'<td class="td-sku">{it["sku"]}</td>'
-                          f'<td>{it["brand"]}</td><td>{it["capacity"]}</td>'
-                          f'<td>{it["emballage"]}</td><td>{it["saveur"]}</td>'
-                          f'<td style="color:{col};font-weight:700">{conf:.1%}</td></tr>')
-        st.markdown(f"""
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr>
-              <th>Produit</th><th>SKU</th><th>Marque</th><th>Capacité</th>
-              <th>Emballage</th><th>Saveur</th><th>Confiance</th>
-            </tr></thead>
-            <tbody>{rows_html}</tbody>
-          </table>
-        </div>""", unsafe_allow_html=True)
+            if conf > 0.7:
+                col = "var(--green)"
+            elif conf > 0.4:
+                col = "var(--amber)"
+            elif conf > 0.2:
+                col = "var(--orange)"
+            else:
+                col = "var(--red)"
+            rows_html += ('<tr><td class="td-name">' + it["nom"] + '</td>'
+                          '<td class="td-sku">' + it["sku"] + '</td>'
+                          '<td>' + it["brand"] + '</td><td>' + it["capacity"] + '</td>'
+                          '<td>' + it["emballage"] + '</td><td>' + it["saveur"] + '</td>'
+                          '<td style="color:' + col + ';font-weight:700">' + f"{conf:.1%}" + '</td></tr>')
+        st.markdown('<div class="tbl-wrap"><table><thead><tr><th>Produit</th><th>SKU</th><th>Marque</th><th>Capacité</th><th>Emballage</th><th>Saveur</th><th>Confiance</th></tr></thead><tbody>' + rows_html + '</tbody></table></div>', unsafe_allow_html=True)
 
-        st.markdown(
-            '<div style="font-size:12px;color:var(--text-muted);margin:16px 0 8px;">Supprimer individuellement</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown('<div style="font-size:12px;color:var(--text-muted);margin:16px 0 8px;">Supprimer individuellement</div>', unsafe_allow_html=True)
         del_ids = []
         for it in validated:
             rc1, rc2, rc3 = st.columns([3, 1, 1])
             conf = it['conf']
-            col = ("var(--green)" if conf > 0.7 else "var(--amber)" if conf > 0.4
-                   else "var(--orange)" if conf > 0.2 else "var(--red)")
+            if conf > 0.7:
+                col = "var(--green)"
+            elif conf > 0.4:
+                col = "var(--amber)"
+            elif conf > 0.2:
+                col = "var(--orange)"
+            else:
+                col = "var(--red)"
             with rc1:
-                st.markdown(
-                    f'<span style="font-weight:600;font-size:13px">{it["nom"]}</span>'
-                    f'&nbsp;&nbsp;<span style="color:var(--blue);font-family:var(--font-mono);font-size:11px">{it["sku"]}</span>',
-                    unsafe_allow_html=True
-                )
+                st.markdown('<span style="font-weight:600;font-size:13px">' + it["nom"] + '</span>&nbsp;&nbsp;<span style="color:var(--blue);font-family:var(--font-mono);font-size:11px">' + it["sku"] + '</span>', unsafe_allow_html=True)
             with rc2:
-                st.markdown(
-                    f'<span style="color:{col};font-weight:700;font-family:var(--font-mono);font-size:12px">{conf:.1%}</span>',
-                    unsafe_allow_html=True
-                )
+                st.markdown('<span style="color:' + col + ';font-weight:700;font-family:var(--font-mono);font-size:12px">' + f"{conf:.1%}" + '</span>', unsafe_allow_html=True)
             with rc3:
                 if st.button("✕", key=f"dv_{it['id']}", use_container_width=True):
                     del_ids.append(it['id'])
         if del_ids:
-            st.session_state.inv_validated = [
-                x for x in st.session_state.inv_validated if x['id'] not in del_ids
-            ]
+            st.session_state.inv_validated = [x for x in st.session_state.inv_validated if x['id'] not in del_ids]
             st.rerun()
 
         st.markdown('<hr>', unsafe_allow_html=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        inv_rows = [{"Produit": it['nom'], "SKU": it['sku'], "Marque": it['brand'],
-                     "Capacité": it['capacity'], "Emballage": it['emballage'],
-                     "Saveur": it['saveur'], "Confiance": f"{it['conf']:.1%}"}
-                    for it in validated]
+        inv_rows = [{"Produit": it['nom'], "SKU": it['sku'], "Marque": it['brand'], "Capacité": it['capacity'], "Emballage": it['emballage'], "Saveur": it['saveur'], "Confiance": f"{it['conf']:.1%}"} for it in validated]
         ec1, ec2 = st.columns(2)
         with ec1:
-            st.download_button("Exporter CSV",
-                pd.DataFrame(inv_rows).to_csv(index=False),
-                f"inventaire_{ts}.csv", "text/csv", use_container_width=True)
+            st.download_button("Exporter CSV", pd.DataFrame(inv_rows).to_csv(index=False), f"inventaire_{ts}.csv", "text/csv", use_container_width=True)
         with ec2:
             inv_json = [{k: v for k, v in it.items() if k != 'crop_bytes'} for it in validated]
-            st.download_button("Exporter JSON",
-                json.dumps(inv_json, indent=2, ensure_ascii=False, default=str),
-                f"inventaire_{ts}.json", "application/json", use_container_width=True)
+            st.download_button("Exporter JSON", json.dumps(inv_json, indent=2, ensure_ascii=False, default=str), f"inventaire_{ts}.json", "application/json", use_container_width=True)
     else:
         st.markdown("""
         <div class="empty-state">
