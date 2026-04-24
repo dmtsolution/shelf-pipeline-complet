@@ -1,4 +1,4 @@
-# app.py — SKU Recognition Pipeline · Streamlit · Version Finale
+# app.py — SKU Recognition Pipeline · Streamlit · YOLO + MobileNetV3
 import streamlit as st
 import torch
 import torch.nn as nn
@@ -194,7 +194,7 @@ def render_annotated_image(raw_bytes, annotated_np, crops_data, detections):
         bbox_zones += (
             '<div class="bbox-z ' + cc + '" '
             'style="left:' + f"{lp:.2f}" + '%;top:' + f"{tp:.2f}" + '%;width:' + f"{wp:.2f}" + '%;height:' + f"{hp:.2f}" + '%;" '
-            'onclick="event.stopPropagation();openBboxPanel(' + str(i) + ')" title="' + cd['stage2_nom'] + '"></div>'
+            'onclick="openBboxPanel(' + str(i) + ')" title="' + cd['stage2_nom'] + '"></div>'
         )
         panel_data.append({
             "img":  "data:image/jpeg;base64," + b64(cd['crop_bytes']),
@@ -220,8 +220,6 @@ def render_annotated_image(raw_bytes, annotated_np, crops_data, detections):
     html += bbox_zones
     html += '</div></div></div>'
 
-    # Modal overlay - fixed position, no scroll
-    html += '<div id="bpanel-overlay" class="bpanel-overlay" onclick="closeBboxPanel()"></div>'
     html += '<div id="bpanel" class="bpanel">'
     html += '<div class="bpanel-hdr"><span class="bpanel-title">Détail produit</span>'
     html += '<button class="bpanel-close" onclick="closeBboxPanel()">&#x2715;</button></div>'
@@ -249,13 +247,8 @@ def render_annotated_image(raw_bytes, annotated_np, crops_data, detections):
     html += '+"<div class=\"bp-row\"><span class=\"bp-k\">Saveur</span><span class=\"bp-v\">"+d.saveur+"</span></div>"'
     html += '+"</div>"'
     html += '+"<div class=\"bp-bar-wrap\"><div class=\"bp-track\"><div class=\"bp-fill\" style=\"width:"+pct+";background:"+col+"\"></div></div></div>";'
-    html += 'document.getElementById("bpanel-overlay").classList.add("open");'
-    html += 'document.getElementById("bpanel").classList.add("open");'
-    html += '};'
-    html += 'window.closeBboxPanel=function(){'
-    html += 'document.getElementById("bpanel-overlay").classList.remove("open");'
-    html += 'document.getElementById("bpanel").classList.remove("open");'
-    html += '};'
+    html += 'document.getElementById("bpanel").style.display="block";};'
+    html += 'window.closeBboxPanel=function(){document.getElementById("bpanel").style.display="none";};'
     html += 'document.addEventListener("keydown",function(e){if(e.key==="Escape")window.closeBboxPanel();});'
     html += '})();</script>'
     return html
@@ -385,23 +378,23 @@ st.markdown(
 )
 
 # ══════════════════════════════════════════════════════
-# CSS - FINAL
+# CSS (same as before, no f-string backslash issues)
 # ══════════════════════════════════════════════════════
 st.markdown("""
 <style>
 :root{
-  --bg:#F4F5F8;--surface:#FFFFFF;--surface-2:#F0F2F7;--surface-3:#E2E6EF;
-  --blue:#6C63FF;--blue-dark:#5A52E0;--blue-light:#F0EFFF;--blue-border:#D0CDFF;
-  --green:#10B981;--amber:#F59E0B;--orange:#F97316;--red:#EF4444;
-  --text:#1A1D2E;--text-2:#334155;--text-muted:#6B7280;--text-subtle:#9CA3AF;
-  --border:#E2E6EF;--border-2:#D0D5E3;
+  --bg:#F8FAFC;--surface:#FFFFFF;--surface-2:#F1F5F9;--surface-3:#E2E8F0;
+  --blue:#2563EB;--blue-dark:#1D4ED8;--blue-light:#EFF6FF;--blue-border:#BFDBFE;
+  --green:#059669;--amber:#D97706;--orange:#EA580C;--red:#DC2626;
+  --text:#0F172A;--text-2:#334155;--text-muted:#64748B;--text-subtle:#94A3B8;
+  --border:#E2E8F0;--border-2:#CBD5E1;
   --font:'Inter',-apple-system,sans-serif;
   --font-mono:'JetBrains Mono','Fira Code',monospace;
   --r:10px;--r-sm:6px;--r-lg:14px;
   --sh:0 1px 3px rgba(0,0,0,.06),0 2px 8px rgba(0,0,0,.04);
   --sh-md:0 4px 12px rgba(0,0,0,.08),0 1px 3px rgba(0,0,0,.05);
   --sh-lg:0 8px 32px rgba(0,0,0,.12);
-  --sh-blue:0 4px 14px rgba(108,99,255,.22);
+  --sh-blue:0 4px 14px rgba(37,99,235,.22);
 }
 
 *,*::before,*::after{box-sizing:border-box;}
@@ -412,30 +405,22 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
 [data-testid="stVerticalBlock"]{font-family:var(--font)!important;}
 .stApp{background:var(--bg)!important;}
 
-/* Remove top padding */
-.main .block-container{padding-top:2px!important;padding-bottom:0!important;}
-[data-testid="stVerticalBlock"] > div:first-child{padding-top:0!important;margin-top:0!important;}
+.main .block-container{padding-top:12px!important;}
 
-/* ═══════ SIDEBAR - LIGHT THEME ═══════ */
 [data-testid="stSidebar"]{
   background:var(--surface)!important;
   border-right:1px solid var(--border)!important;
-  box-shadow:2px 0 12px rgba(0,0,0,.04)!important;
+  box-shadow:2px 0 8px rgba(0,0,0,.04)!important;
 }
-[data-testid="stSidebar"] *{color:var(--text)!important;}
-[data-testid="stSidebar"] [data-testid="stMarkdown"] p,
-[data-testid="stSidebar"] [data-testid="stMarkdown"] span,
-[data-testid="stSidebar"] label{color:var(--text-muted)!important;}
 [data-testid="stSidebar"]::-webkit-scrollbar{width:3px;}
 [data-testid="stSidebar"]::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:3px;}
 [data-testid="stSidebar"] [data-baseweb="slider-track"]{background:var(--surface-3)!important;}
 [data-testid="stSidebar"] [data-baseweb="slider-track-fill"]{background:var(--blue)!important;}
 [data-testid="stSidebar"] [role="slider"]{
   background:var(--blue)!important;border:none!important;
-  box-shadow:0 0 0 4px rgba(108,99,255,.18)!important;
+  box-shadow:0 0 0 4px rgba(37,99,235,.18)!important;
 }
 
-/* ═══════ TABS ═══════ */
 .stTabs [data-baseweb="tab-list"]{
   background:var(--surface)!important;border:1px solid var(--border)!important;
   border-radius:var(--r)!important;padding:4px!important;gap:2px!important;
@@ -447,20 +432,19 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
   font-weight:500!important;color:var(--text-muted)!important;transition:all .15s!important;
 }
 .stTabs [aria-selected="true"]{
-  background:linear-gradient(135deg,var(--blue),var(--blue-dark))!important;color:#fff!important;box-shadow:var(--sh-blue)!important;
+  background:var(--blue)!important;color:#fff!important;box-shadow:var(--sh-blue)!important;
 }
 .stTabs [aria-selected="false"]:hover{background:var(--surface-2)!important;color:var(--text-2)!important;}
 .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important;}
 
-/* ═══════ BUTTONS ═══════ */
 .stButton>button{
-  font-family:var(--font)!important;font-size:12px!important;font-weight:600!important;
-  border-radius:var(--r-sm)!important;padding:7px 14px!important;border:none!important;
+  font-family:var(--font)!important;font-size:13px!important;font-weight:500!important;
+  border-radius:var(--r-sm)!important;padding:8px 16px!important;border:none!important;
   transition:all .15s!important;outline:none!important;
 }
-.stButton>button:hover{opacity:.9!important;transform:translateY(-1px)!important;}
+.stButton>button:hover{opacity:.88!important;transform:translateY(-1px)!important;}
 [data-testid="baseButton-primary"]{
-  background:linear-gradient(135deg,var(--blue),var(--blue-dark))!important;color:#fff!important;box-shadow:var(--sh-blue)!important;
+  background:var(--blue)!important;color:#fff!important;box-shadow:var(--sh-blue)!important;
 }
 [data-testid="baseButton-secondary"]{
   background:var(--surface)!important;color:var(--text-2)!important;
@@ -468,16 +452,15 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
 }
 
 [data-testid="stDownloadButton"]>button{
-  font-family:var(--font)!important;font-size:12px!important;font-weight:600!important;
+  font-family:var(--font)!important;font-size:13px!important;font-weight:500!important;
   background:var(--surface)!important;color:var(--text-2)!important;
   border:1px solid var(--border-2)!important;border-radius:var(--r-sm)!important;
-  padding:8px 14px!important;box-shadow:var(--sh)!important;transition:all .15s!important;
+  padding:8px 16px!important;box-shadow:var(--sh)!important;transition:all .15s!important;
 }
 [data-testid="stDownloadButton"]>button:hover{background:var(--surface-2)!important;transform:translateY(-1px)!important;}
 
-/* ═══════ UPLOAD ZONE ═══════ */
 [data-testid="stFileUploaderDropzone"]{
-  border:2px dashed var(--border-2)!important;border-radius:var(--r-lg)!important;
+  border:1.5px dashed var(--border-2)!important;border-radius:var(--r-lg)!important;
   padding:36px 28px!important;background:var(--surface)!important;
   box-shadow:var(--sh)!important;transition:all .2s!important;
 }
@@ -485,140 +468,118 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
   border-color:var(--blue)!important;
   box-shadow:0 0 0 3px var(--blue-border),var(--sh)!important;
 }
-/* Hide duplicate text */
-[data-testid="stFileUploaderDropzone"] small{display:none!important;}
+[data-testid="stFileUploaderDropzone"] span{font-family:var(--font)!important;color:var(--text-muted)!important;}
+[data-testid="stFileUploaderDropzone"] + div > span{display:none!important;}
 
-/* ═══════ CAMERA ═══════ */
 [data-testid="stCameraInput"] video,
 [data-testid="stCameraInput"] img{border-radius:var(--r)!important;}
 [data-testid="stCameraInput"] label{display:none!important;}
 
-/* ═══════ PROGRESS ═══════ */
 [data-testid="stProgressBar"]>div>div{background:var(--blue)!important;border-radius:4px!important;}
 
-/* ═══════ HR ═══════ */
-hr{border:none!important;border-top:1px solid var(--border)!important;margin:20px 0!important;}
+hr{border:none!important;border-top:1px solid var(--border)!important;margin:24px 0!important;}
 
-/* ═══════ SIDEBAR WIDGETS ═══════ */
+/* ═══════ SIDEBAR ═══════ */
 .sb-logo{
   display:flex;align-items:center;gap:12px;
-  padding:18px 14px 14px;border-bottom:1px solid var(--border);margin-bottom:4px;
+  padding:20px 16px 16px;border-bottom:1px solid var(--border);margin-bottom:4px;
 }
 .sb-logo-mark{
-  width:36px;height:36px;flex-shrink:0;
-  background:linear-gradient(135deg,var(--blue),var(--blue-dark));border-radius:10px;
+  width:34px;height:34px;flex-shrink:0;background:var(--blue);border-radius:8px;
   display:flex;align-items:center;justify-content:center;
-  box-shadow:0 4px 12px rgba(108,99,255,.3);
 }
-.sb-logo-title{font-size:15px;font-weight:800;color:var(--text)!important;line-height:1.2;}
-.sb-logo-sub{font-size:10px;color:var(--text-muted)!important;letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
+.sb-logo-title{font-size:14px;font-weight:700;color:var(--text);line-height:1.2;}
+.sb-logo-sub{font-size:10px;color:var(--text-muted);letter-spacing:.08em;text-transform:uppercase;margin-top:2px;}
 .sb-section{
-  font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--text-muted)!important;padding:8px 0;
+  font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--text-subtle);padding:6px 0 8px;
 }
 .sb-pipeline{display:flex;flex-direction:column;gap:4px;}
 .sb-stage{
   display:flex;align-items:center;gap:10px;padding:8px 10px;
-  border-radius:8px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:6px;background:var(--surface-2);border:1px solid var(--border);
 }
 .sb-stage-num{
-  width:22px;height:22px;border-radius:4px;background:var(--blue);
-  color:#fff!important;font-size:10px;font-weight:700;
+  width:20px;height:20px;border-radius:4px;background:var(--blue);
+  color:#fff;font-size:10px;font-weight:700;
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
 }
-.sb-stage-text{font-size:11px;font-weight:600;color:var(--text)!important;}
-.sb-stage-sub{font-size:10px;color:var(--text-muted)!important;}
+.sb-stage-text{font-size:12px;font-weight:600;color:var(--text);}
+.sb-stage-sub{font-size:10px;color:var(--text-muted);}
 .sb-files{display:flex;flex-direction:column;gap:2px;}
 .sb-file-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);}
 .sb-file-row:last-child{border-bottom:none;}
-.sb-file-key{font-size:10px;color:var(--text-muted)!important;font-family:var(--font-mono);width:46px;flex-shrink:0;}
-.sb-file-val{font-size:10px;color:var(--text-2)!important;font-family:var(--font-mono);word-break:break-all;}
-.sb-divider{border:none;border-top:1px solid var(--border);margin:16px 0;}
+.sb-file-key{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);width:46px;flex-shrink:0;}
+.sb-file-val{font-size:10px;color:var(--text-2);font-family:var(--font-mono);word-break:break-all;}
+.sb-divider{border:none;border-top:1px solid var(--border);margin:14px 0;}
 .status-pill{
   display:inline-flex;align-items:center;gap:7px;
-  padding:8px 12px;border-radius:8px;font-size:11px;font-family:var(--font-mono);font-weight:500;
+  padding:6px 12px;border-radius:20px;font-size:11px;font-family:var(--font-mono);font-weight:500;
 }
-.s-ok{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);color:#10B981!important;}
-.s-err{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#EF4444!important;}
-.status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
-.s-ok .status-dot{background:#10B981;}
-.s-err .status-dot{background:#EF4444;}
+.s-ok{background:rgba(5,150,105,.1);border:1px solid rgba(5,150,105,.25);color:#059669;}
+.s-err{background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.2);color:#DC2626;}
+.status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+.s-ok .status-dot{background:#059669;}
+.s-err .status-dot{background:#DC2626;}
 
 /* ═══════ PAGE HEADER ═══════ */
-.page-header{padding:4px 0 16px;border-bottom:1px solid var(--border);margin-bottom:18px;}
-.page-header-title{
-  font-size:24px;font-weight:800;letter-spacing:-.02em;
-  background:linear-gradient(90deg,var(--text) 0%,var(--blue) 100%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text;margin:0 0 4px;display:inline-block;
-}
+.page-header{padding:12px 0 20px;border-bottom:1px solid var(--border);margin-bottom:24px;}
+.page-header-title{font-size:21px;font-weight:700;color:var(--text);letter-spacing:-.025em;margin:0 0 4px;}
 .page-header-sub{font-size:13px;color:var(--text-muted);margin:0;}
 
 /* ═══════ RESULTS ═══════ */
-.result-images{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px;}
+.result-images{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
 .result-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);}
-.result-card-header{padding:11px 16px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;text-transform:uppercase;}
-.result-card-header span{font-weight:500;color:var(--blue);text-transform:none;letter-spacing:0;}
+.result-card-header{padding:10px 14px;border-bottom:1px solid var(--border);font-size:11px;font-weight:600;color:var(--text-2);letter-spacing:.04em;text-transform:uppercase;}
+.result-card-header span{font-weight:400;color:var(--text-subtle);text-transform:none;letter-spacing:0;}
 
-/* Bbox zones */
 .bbox-z{
   position:absolute;border:2px solid transparent;
   border-radius:3px;cursor:pointer;transition:background .12s;
   box-sizing:border-box;
 }
-.bbox-z.ch{border-color:rgba(16,185,129,.85);}
-.bbox-z.cm{border-color:rgba(245,158,11,.85);}
-.bbox-z.cl{border-color:rgba(249,115,22,.85);}
-.bbox-z.cv{border-color:rgba(239,68,68,.85);}
+.bbox-z.ch{border-color:rgba(5,150,105,.85);}
+.bbox-z.cm{border-color:rgba(217,119,6,.85);}
+.bbox-z.cl{border-color:rgba(234,88,12,.85);}
+.bbox-z.cv{border-color:rgba(220,38,38,.85);}
 .bbox-z:hover{background:rgba(255,255,255,.18);}
 
-/* Modal overlay */
-.bpanel-overlay{
-  display:none;position:fixed;inset:0;z-index:9998;
-  background:rgba(26,29,46,.5);backdrop-filter:blur(7px);
-}
-.bpanel-overlay.open{display:block;}
-
-/* Bbox floating panel */
 .bpanel{
-  display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
-  width:340px;max-width:94vw;max-height:90vh;overflow-y:auto;
-  background:var(--surface);border-radius:20px;
-  box-shadow:var(--sh-lg),0 0 0 1px var(--border);z-index:9999;
+  display:none;position:fixed;top:50%;right:24px;transform:translateY(-50%);
+  width:296px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r-lg);box-shadow:var(--sh-lg);z-index:9999;overflow:hidden;
+  font-family:var(--font);
 }
-.bpanel.open{display:block;}
 .bpanel-hdr{
   display:flex;align-items:center;justify-content:space-between;
-  padding:16px 20px 12px;border-bottom:1px solid var(--border);
+  padding:11px 14px;border-bottom:1px solid var(--border);background:var(--surface-2);
 }
-.bpanel-title{font-size:18px;font-weight:800;color:var(--text);}
+.bpanel-title{font-size:12px;font-weight:600;color:var(--text);}
 .bpanel-close{
-  width:32px;height:32px;border-radius:8px;background:var(--surface-2);
-  border:1px solid var(--border);cursor:pointer;color:var(--text-muted);
-  font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s;
+  background:none;border:none;cursor:pointer;color:var(--text-muted);
+  font-size:13px;padding:2px 6px;border-radius:4px;line-height:1;
 }
-.bpanel-close:hover{background:var(--red);color:#fff;border-color:var(--red);}
-.bpanel-body{padding:18px 20px;}
-.bp-top{display:flex;gap:14px;margin-bottom:14px;}
-.bp-img{max-height:120px;max-width:100%;border-radius:8px;object-fit:contain;background:var(--surface-2);padding:8px;border:1px solid var(--border);flex-shrink:0;}
+.bpanel-close:hover{background:var(--surface-3);color:var(--text);}
+.bpanel-body{padding:14px;}
+.bp-top{display:flex;gap:12px;margin-bottom:12px;}
+.bp-img{width:68px;height:68px;object-fit:contain;border-radius:6px;background:var(--surface-2);border:1px solid var(--border);padding:3px;flex-shrink:0;}
 .bp-info{flex:1;min-width:0;}
-.bp-name{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px;line-height:1.3;}
-.bp-sku{font-size:11px;color:var(--blue);font-family:var(--font-mono);word-break:break-all;margin-bottom:6px;}
-.bp-conf{font-size:28px;font-weight:800;font-family:var(--font-mono);}
-.bp-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;}
-.bp-row{display:flex;flex-direction:column;gap:2px;padding:8px 10px;background:var(--surface-2);border-radius:8px;border:1px solid var(--border);}
-.bp-k{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;}
-.bp-v{font-size:13px;font-weight:700;color:var(--text);}
-.bp-bar-wrap{margin-top:6px;}
-.bp-bar-lbl{font-size:11px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:5px;}
-.bp-track{height:8px;background:var(--border-2);border-radius:4px;overflow:hidden;}
-.bp-fill{height:100%;border-radius:4px;}
+.bp-name{font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px;line-height:1.3;}
+.bp-sku{font-size:10px;color:var(--blue);font-family:var(--font-mono);word-break:break-all;margin-bottom:4px;}
+.bp-conf{font-size:16px;font-weight:700;font-family:var(--font-mono);}
+.bp-fields{display:flex;flex-direction:column;gap:4px;}
+.bp-row{display:flex;align-items:flex-start;gap:8px;font-size:12px;}
+.bp-k{color:var(--text-subtle);width:64px;flex-shrink:0;font-family:var(--font-mono);font-size:11px;padding-top:1px;}
+.bp-v{color:var(--text-2);font-weight:500;}
+.bp-bar-wrap{margin-top:12px;}
+.bp-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+.bp-fill{height:100%;border-radius:2px;}
 
 /* ═══════ METRICS ═══════ */
-.metrics-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px;}
-.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:16px 12px;box-shadow:var(--sh);text-align:center;}
-.metric-val{font-size:26px;font-weight:800;font-family:var(--font-mono);}
-.metric-lbl{font-size:10px;color:var(--text-muted);margin-top:3px;letter-spacing:.06em;text-transform:uppercase;}
+.metrics-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:24px;}
+.metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 12px;box-shadow:var(--sh);}
+.metric-val{font-size:26px;font-weight:700;font-family:var(--font-mono);letter-spacing:-.02em;}
+.metric-lbl{font-size:11px;color:var(--text-muted);margin-top:2px;}
 .metric-total .metric-val{color:var(--text);}
 .metric-high  .metric-val{color:var(--green);}
 .metric-med   .metric-val{color:var(--amber);}
@@ -626,122 +587,100 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:20p
 .metric-vlow  .metric-val{color:var(--red);}
 
 /* ═══════ DETECTION CARDS ═══════ */
-.detections-section{margin-bottom:22px;}
-.section-title{font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.01em;margin:0 0 12px;}
+.detections-section{margin-bottom:24px;}
+.section-title{font-size:13px;font-weight:600;color:var(--text);letter-spacing:-.01em;margin:0 0 12px;}
 .section-title span{font-weight:400;color:var(--text-muted);}
-.detections-stack{display:flex;flex-direction:column;gap:8px;}
-.det-card{background:var(--surface);border:1px solid var(--border);border-left:4px solid transparent;border-radius:var(--r);overflow:hidden;cursor:pointer;transition:box-shadow .15s,transform .15s;box-shadow:var(--sh);}
+.detections-stack{display:flex;flex-direction:column;gap:6px;}
+.det-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid transparent;border-radius:var(--r);overflow:hidden;cursor:pointer;transition:box-shadow .15s,transform .15s;box-shadow:var(--sh);}
 .det-card:hover{box-shadow:var(--sh-md);transform:translateY(-1px);}
 .det-card.ch{border-left-color:var(--green);}
 .det-card.cm{border-left-color:var(--amber);}
 .det-card.cl{border-left-color:var(--orange);}
 .det-card.cv{border-left-color:var(--red);}
-.det-row{display:flex;align-items:center;gap:14px;padding:13px 16px;user-select:none;}
-.det-thumb{width:52px;height:52px;border-radius:8px;object-fit:cover;flex-shrink:0;background:var(--surface-2);border:1px solid var(--border);}
+.det-row{display:flex;align-items:center;gap:12px;padding:11px 14px;user-select:none;}
+.det-thumb{width:46px;height:46px;border-radius:6px;object-fit:cover;flex-shrink:0;background:var(--surface-2);border:1px solid var(--border);}
 .det-body{flex:1;min-width:0;}
-.det-name{font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;}
-.det-pills{display:flex;gap:5px;flex-wrap:wrap;}
-.pill{padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;font-family:var(--font-mono);letter-spacing:.03em;}
-.pill-f{background:rgba(245,158,11,.1);color:var(--amber);}
-.pill-s{background:rgba(108,99,255,.08);color:var(--blue);}
-.pill-b{background:rgba(16,185,129,.08);color:var(--green);}
-.det-pct{font-family:var(--font-mono);font-size:17px;font-weight:800;flex-shrink:0;}
+.det-name{font-size:13px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;}
+.det-pills{display:flex;gap:4px;flex-wrap:wrap;}
+.pill{padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;font-family:var(--font-mono);letter-spacing:.02em;}
+.pill-f{background:rgba(217,119,6,.1);color:var(--amber);}
+.pill-s{background:rgba(37,99,235,.08);color:var(--blue);}
+.pill-b{background:rgba(5,150,105,.08);color:var(--green);}
+.det-pct{font-family:var(--font-mono);font-size:16px;font-weight:700;flex-shrink:0;}
 .ch .det-pct{color:var(--green);}
 .cm .det-pct{color:var(--amber);}
 .cl .det-pct{color:var(--orange);}
 .cv .det-pct{color:var(--red);}
-.det-chevron{width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-subtle);font-size:10px;transition:transform .2s;}
+.det-chevron{width:16px;height:16px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text-subtle);font-size:9px;transition:transform .2s;}
 .det-card.open .det-chevron{transform:rotate(90deg);}
-.det-expand{display:none;padding:0 16px 16px;border-top:1px solid var(--border);}
+.det-expand{display:none;padding:0 14px 14px;border-top:1px solid var(--border);}
 .det-card.open .det-expand{display:block;}
-.det-expand-inner{display:grid;grid-template-columns:110px 1fr;gap:16px;padding-top:14px;}
-.det-large-img{width:110px;height:110px;object-fit:contain;border-radius:8px;background:var(--surface-2);padding:4px;border:1px solid var(--border);}
-.det-fields{display:flex;flex-direction:column;gap:5px;}
+.det-expand-inner{display:grid;grid-template-columns:96px 1fr;gap:14px;padding-top:12px;}
+.det-large-img{width:96px;height:96px;object-fit:contain;border-radius:7px;background:var(--surface-2);border:1px solid var(--border);padding:4px;}
+.det-fields{display:flex;flex-direction:column;gap:4px;}
 .det-field{display:flex;align-items:flex-start;gap:8px;font-size:12px;}
-.det-fk{color:var(--text-muted);width:82px;flex-shrink:0;font-family:var(--font-mono);font-size:11px;padding-top:1px;}
-.det-fv{color:var(--text);font-weight:600;}
-.conf-bar-wrap{margin-top:10px;}
-.conf-bar-lbl{font-size:11px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:5px;}
-.conf-bar-track{height:6px;background:var(--border-2);border-radius:3px;overflow:hidden;}
-.conf-bar-fill{height:100%;border-radius:3px;}
+.det-fk{color:var(--text-muted);width:72px;flex-shrink:0;font-family:var(--font-mono);font-size:11px;padding-top:1px;}
+.det-fv{color:var(--text-2);font-weight:500;}
+.conf-bar-wrap{margin-top:8px;}
+.conf-bar-lbl{font-size:11px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:4px;}
+.conf-bar-track{height:4px;background:var(--border);border-radius:2px;overflow:hidden;}
+.conf-bar-fill{height:100%;border-radius:2px;}
 .ch .conf-bar-fill{background:var(--green);}
 .cm .conf-bar-fill{background:var(--amber);}
 .cl .conf-bar-fill{background:var(--orange);}
 .cv .conf-bar-fill{background:var(--red);}
-.top5{margin-top:10px;}
-.top5-title{font-size:11px;font-weight:700;color:var(--text-muted);margin-bottom:5px;}
-.top5-item{display:flex;align-items:center;gap:8px;font-size:11px;font-family:var(--font-mono);padding:3px 0;}
-.top5-i{color:var(--text-subtle);width:14px;flex-shrink:0;}
-.top5-s{flex:1;color:var(--blue);word-break:break-word;}
+.top5{margin-top:8px;}
+.top5-title{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--text-subtle);margin-bottom:5px;}
+.top5-item{display:flex;align-items:center;gap:7px;font-size:11px;font-family:var(--font-mono);padding:2px 0;}
+.top5-i{color:var(--text-subtle);width:11px;flex-shrink:0;}
+.top5-s{flex:1;color:var(--blue);}
 .top5-c{color:var(--text-muted);}
 
 /* ═══════ TABLE ═══════ */
-.tbl-section{margin-top:26px;}
-.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:auto;max-height:380px;box-shadow:var(--sh);}
-.tbl-wrap table{width:100%;border-collapse:collapse;font-size:12px;min-width:800px;}
-.tbl-wrap th{padding:10px 14px;text-align:left;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);background:var(--surface-2);border-bottom:1px solid var(--border);position:sticky;top:0;white-space:nowrap;}
-.tbl-wrap td{padding:9px 14px;border-bottom:1px solid rgba(226,230,239,.6);font-family:var(--font-mono);color:var(--text-muted);white-space:nowrap;}
+.tbl-section{margin-top:24px;}
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);overflow:auto;max-height:340px;box-shadow:var(--sh);}
+.tbl-wrap table{width:100%;border-collapse:collapse;font-size:12px;min-width:720px;}
+.tbl-wrap th{padding:9px 12px;text-align:left;font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--text-muted);background:var(--surface-2);border-bottom:1px solid var(--border);position:sticky;top:0;white-space:nowrap;}
+.tbl-wrap td{padding:8px 12px;border-bottom:1px solid rgba(226,232,240,.5);font-family:var(--font-mono);font-size:11px;color:var(--text-muted);white-space:nowrap;}
 .tbl-wrap tr:last-child td{border-bottom:none;}
 .tbl-wrap tr:hover td{background:var(--blue-light);}
-.td-name{color:var(--text)!important;font-family:var(--font)!important;font-size:12px!important;font-weight:700!important;}
+.td-name{color:var(--text)!important;font-family:var(--font)!important;font-size:12px!important;font-weight:600!important;}
 .td-sku{color:var(--blue)!important;}
 
 /* ═══════ INVENTORY ═══════ */
-.inv-card{
-  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
-  padding:12px;box-shadow:var(--sh);transition:all .15s;
-}
+.inv-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px;box-shadow:var(--sh);transition:all .15s;}
 .inv-card:hover{box-shadow:var(--sh-md);transform:translateY(-2px);}
-.inv-card-img{width:100%;height:120px;object-fit:contain;background:var(--surface-2);border-radius:var(--r-sm);margin-bottom:10px;border:1px solid var(--border);display:block;}
-.inv-card-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;}
-.inv-card-sku{font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:6px;word-break:break-all;}
-.inv-card-conf{font-size:11px;font-weight:700;margin-bottom:10px;}
-.inv-card-actions{display:flex;gap:8px;margin-top:8px;}
-.btn-add{background:var(--green);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;transition:all .2s;flex:1;text-align:center;font-weight:600;}
-.btn-add:hover{background:#0e9f6e;}
-.btn-del{background:var(--surface-2);color:var(--text-muted);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;transition:all .2s;text-align:center;}
-.btn-del:hover{background:var(--red);color:#fff;border-color:var(--red);}
+.inv-card-img{width:100%;height:100px;object-fit:contain;background:var(--surface-2);border-radius:var(--r-sm);margin-bottom:8px;border:1px solid var(--border);display:block;}
+.inv-card-name{font-size:12px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px;}
+.inv-card-sku{font-size:10px;color:var(--blue);font-family:var(--font-mono);margin-bottom:4px;word-break:break-all;}
+.inv-card-conf{font-size:11px;font-weight:700;font-family:var(--font-mono);margin-bottom:10px;}
+.inv-btn-row{padding-top:2px;}
 
 /* ═══════ CAMERA ═══════ */
-.cam-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;box-shadow:var(--sh);text-align:center;}
+.cam-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:24px;box-shadow:var(--sh);}
 .cam-placeholder{
   background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);
-  width:100%;max-width:640px;height:200px;
+  width:100%;max-width:540px;height:180px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   color:var(--text-subtle);margin:0 auto 16px;gap:6px;
 }
 .cam-placeholder-title{font-size:13px;font-weight:500;color:var(--text-muted);}
 .cam-placeholder-sub{font-size:12px;}
+.cam-facing-row{display:flex;gap:8px;margin-bottom:12px;justify-content:center;}
 
 /* ═══════ EMPTY STATE ═══════ */
 .empty-state{
-  padding:40px 28px;text-align:center;
+  padding:44px 28px;text-align:center;
   background:var(--surface);border:1.5px dashed var(--border-2);border-radius:var(--r-lg);
 }
 .empty-title{font-size:14px;font-weight:600;color:var(--text-2);margin-bottom:4px;}
 .empty-sub{font-size:12px;color:var(--text-muted);}
 
-/* ═══════ SESSION NAV ═══════ */
-.session-nav{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
-.session-tab{
-  display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;
-  border:1px solid var(--border);background:var(--surface);font-size:12px;
-  font-weight:600;color:var(--text-muted);cursor:pointer;transition:all .18s;
-}
-.session-tab.active{background:var(--blue-light);border-color:var(--blue);color:var(--blue);}
-.session-tab:hover:not(.active){background:var(--surface-2);color:var(--text);}
-.session-close{
-  width:16px;height:16px;border-radius:50%;background:transparent;border:none;
-  cursor:pointer;color:var(--text-muted);font-size:12px;line-height:1;
-  display:flex;align-items:center;justify-content:center;transition:all .15s;
-}
-.session-close:hover{background:var(--red);color:#fff;}
-
 @media(max-width:860px){
   .result-images{grid-template-columns:1fr;}
   .metrics-row{grid-template-columns:repeat(3,1fr);}
   .det-expand-inner{grid-template-columns:1fr;}
-  .bpanel{left:8px;right:8px;transform:translateY(-50%);max-width:calc(100vw - 16px);}
+  .bpanel{right:8px;width:calc(100vw - 16px);transform:translateY(-50%);}
 }
 </style>
 """, unsafe_allow_html=True)
@@ -775,7 +714,7 @@ with st.sidebar:
         </svg>
       </div>
       <div>
-        <div class="sb-logo-title">SKU Pipeline</div>
+        <div class="sb-logo-title">SKU Recognition</div>
         <div class="sb-logo-sub">YOLO · MobileNetV3</div>
       </div>
     </div>""", unsafe_allow_html=True)
@@ -783,7 +722,7 @@ with st.sidebar:
     _status_slot = st.empty()
     st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
 
-    st.markdown('<div class="sb-section">Seuils</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sb-section">Seuils de détection</div>', unsafe_allow_html=True)
     conf_threshold    = st.slider("Seuil YOLO",      0.10, 0.95, 0.45, 0.05)
     display_threshold = st.slider("Seuil affichage", 0.10, 0.95, 0.25, 0.05)
     upscale_factor    = st.slider("Agrandissement",  1.0,  4.0,  2.5,  0.5)
@@ -804,7 +743,7 @@ with st.sidebar:
 
     st.markdown('<hr class="sb-divider">', unsafe_allow_html=True)
     st.markdown('<div class="sb-section">Fichiers modèles</div>', unsafe_allow_html=True)
-
+    
     sb_files_html = (
         '<div class="sb-files">'
         '<div class="sb-file-row"><span class="sb-file-key">YOLO</span><span class="sb-file-val">' + YOLO_MODEL_PATH + '</span></div>'
@@ -845,18 +784,39 @@ st.markdown("""
 </div>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
+# CAMERA FACING JS
+# ══════════════════════════════════════════════════════
+def inject_cam_facing(selector_key, facing):
+    js_code = (
+        '<script>(function(){'
+        'var _f="' + facing + '";'
+        'function _sw(){'
+        'var v=document.querySelector(\'[data-testid="stCameraInput"] video\');'
+        'if(!v||!v.srcObject){setTimeout(_sw,350);return;}'
+        'if(window.__camFacing_' + selector_key + '===_f)return;'
+        'window.__camFacing_' + selector_key + '=_f;'
+        'v.srcObject.getTracks().forEach(function(t){t.stop();});'
+        'navigator.mediaDevices.getUserMedia({video:{facingMode:{exact:_f}},audio:false})'
+        '.catch(function(){return navigator.mediaDevices.getUserMedia({video:{facingMode:_f},audio:false});})'
+        '.then(function(s){if(v&&v.isConnected)v.srcObject=s;});'
+        '}_sw();'
+        '})();</script>'
+    )
+    st.markdown(js_code, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════════
 # MAIN TABS
 # ══════════════════════════════════════════════════════
-tab_up, tab_cam, tab_inv = st.tabs(["📸 Upload", "📷 Caméra", "📦 Inventaire"])
+tab_up, tab_cam, tab_inv = st.tabs(["Upload", "Caméra", "Inventaire"])
 
 # ╔══════════════════════════════════════════════════════╗
 # ║  TAB 1 — UPLOAD                                     ║
 # ╚══════════════════════════════════════════════════════╝
 with tab_up:
     uploaded = st.file_uploader(
-        "Déposez une image de rayon · JPG, JPEG ou PNG",
-        type=["jpg","jpeg","png"],
+        "", type=["jpg","jpeg","png"],
         key=f"main_up_{st.session_state.upload_key}",
+        label_visibility="collapsed"
     )
 
     if uploaded and models_ok:
@@ -879,42 +839,24 @@ with tab_up:
             st.session_state.upload_key += 1
             st.rerun()
 
-    # Session navigation with X close
+    # Session navigation
     if st.session_state.sessions:
-        nav_html = '<div class="session-nav">'
-        for sess in st.session_state.sessions[:8]:
-            active = sess['id'] == st.session_state.active_sess_id
-            nav_html += '<div class="session-tab' + (' active' if active else '') + '" onclick="this.querySelector(\'button\')?null:null">'
-            nav_html += '📷 ' + sess['name']
-            nav_html += '<button class="session-close" onclick="event.stopPropagation();">✕</button>'
-            nav_html += '</div>'
-        nav_html += '</div>'
-        st.markdown(nav_html, unsafe_allow_html=True)
-
-        # Use columns for session selection
-        n_sessions = min(len(st.session_state.sessions), 8)
-        cols = st.columns(n_sessions + 1) if n_sessions < 8 else st.columns(9)
+        n = min(len(st.session_state.sessions), 5)
+        col_widths = []
+        for _ in range(n): col_widths += [4, 1]
+        nav_cols = st.columns(col_widths)
 
         to_remove = None
-        for i, sess in enumerate(st.session_state.sessions[:n_sessions]):
+        for i, sess in enumerate(st.session_state.sessions[:5]):
             active = sess['id'] == st.session_state.active_sess_id
-            with cols[i]:
-                if st.button(sess['name'], key=f"sn_{sess['id']}",
-                            type="primary" if active else "secondary",
-                            use_container_width=True):
+            with nav_cols[i * 2]:
+                if st.button(sess['name'], key=f"sn_{sess['id']}", use_container_width=True,
+                            type="primary" if active else "secondary"):
                     st.session_state.active_sess_id = sess['id']
                     st.rerun()
-
-        # Remove buttons in same row
-        rm_cols = st.columns(n_sessions)
-        for i, sess in enumerate(st.session_state.sessions[:n_sessions]):
-            with rm_cols[i]:
+            with nav_cols[i * 2 + 1]:
                 if st.button("✕", key=f"rm_{sess['id']}", use_container_width=True):
                     to_remove = sess['id']
-
-        # Add image button
-        with cols[-1] if n_sessions < 8 else cols[8]:
-            pass  # handled by uploader
 
         if to_remove is not None:
             st.session_state.sessions = [s for s in st.session_state.sessions if s['id'] != to_remove]
@@ -926,7 +868,6 @@ with tab_up:
 
         active_sess = next((s for s in st.session_state.sessions if s['id'] == st.session_state.active_sess_id), None)
         if active_sess:
-            st.markdown('<hr>', unsafe_allow_html=True)
             st.markdown(
                 render_results_section(active_sess['crops'], active_sess['dets'], active_sess['raw'], active_sess['ann']),
                 unsafe_allow_html=True
@@ -935,12 +876,12 @@ with tab_up:
             df = pd.DataFrame(active_sess['dets'])
             ec1, ec2 = st.columns(2)
             with ec1:
-                st.download_button("📥 CSV", df.to_csv(index=False), f"detections_{ts}.csv", "text/csv", use_container_width=True)
+                st.download_button("Exporter CSV", df.to_csv(index=False), f"detections_{ts}.csv", "text/csv", use_container_width=True)
             with ec2:
-                st.download_button("📥 JSON", json.dumps(active_sess['dets'], indent=2, ensure_ascii=False, default=str), f"detections_{ts}.json", "application/json", use_container_width=True)
+                st.download_button("Exporter JSON", json.dumps(active_sess['dets'], indent=2, ensure_ascii=False, default=str), f"detections_{ts}.json", "application/json", use_container_width=True)
 
 # ╔══════════════════════════════════════════════════════╗
-# ║  TAB 2 — CAMERA (arrière seulement)                 ║
+# ║  TAB 2 — CAMERA                                      ║
 # ╚══════════════════════════════════════════════════════╝
 with tab_cam:
     st.markdown('<div class="cam-wrap">', unsafe_allow_html=True)
@@ -948,23 +889,36 @@ with tab_cam:
     if not st.session_state.cam_active:
         st.markdown("""
         <div class="cam-placeholder">
-          <div class="cam-placeholder-title">📱 Appareil photo ou webcam</div>
-          <div class="cam-placeholder-sub">Cliquez sur Démarrer pour activer la caméra arrière</div>
+          <div class="cam-placeholder-title">Caméra inactive</div>
+          <div class="cam-placeholder-sub">Cliquez sur Démarrer pour activer l'appareil photo</div>
         </div>""", unsafe_allow_html=True)
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
-            if st.button("▶ Démarrer", key="cam_start", type="primary", use_container_width=True):
+            if st.button("Démarrer", key="cam_start", type="primary", use_container_width=True):
                 st.session_state.cam_active = True
                 st.rerun()
     else:
+        cf1, cf2, cf3 = st.columns([1, 1, 1])
+        with cf1:
+            is_back = (st.session_state.cam_facing == 'back')
+            if st.button("Caméra arrière", key="cam_back", type="primary" if is_back else "secondary", use_container_width=True):
+                st.session_state.cam_facing = 'back'
+                st.rerun()
+        with cf2:
+            if st.button("Selfie", key="cam_front", type="primary" if not is_back else "secondary", use_container_width=True):
+                st.session_state.cam_facing = 'front'
+                st.rerun()
+
         cam_img = st.camera_input("", key="cam_input", label_visibility="collapsed")
+        facing_val = "environment" if st.session_state.cam_facing == 'back' else "user"
+        inject_cam_facing("main", facing_val)
 
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
-            st.button("▶ Démarrer", key="cam_start2", disabled=True, use_container_width=True)
+            st.button("Démarrer", key="cam_start2", disabled=True, use_container_width=True)
         with c2:
             if cam_img:
-                if st.button("📸 Capturer", key="cam_use", type="primary", use_container_width=True):
+                if st.button("Utiliser cette photo", key="cam_use", type="primary", use_container_width=True):
                     raw = cam_img.getvalue()
                     with st.spinner("Analyse en cours..."):
                         ann, dets, crops = run_pipeline(raw, yolo_model, sku_model, idx_to_class, sku_catalog, conf_threshold, upscale_factor, display_threshold)
@@ -972,7 +926,7 @@ with tab_cam:
                     st.session_state.cam_active = False
                     st.rerun()
         with c3:
-            if st.button("⏹ Arrêter", key="cam_stop", type="secondary", use_container_width=True):
+            if st.button("Arrêter", key="cam_stop", type="secondary", use_container_width=True):
                 st.session_state.cam_active = False
                 st.rerun()
 
@@ -985,22 +939,19 @@ with tab_cam:
         df = pd.DataFrame(r['dets'])
         ec1, ec2 = st.columns(2)
         with ec1:
-            st.download_button("📥 CSV", df.to_csv(index=False), f"photo_{ts}.csv", "text/csv", use_container_width=True)
+            st.download_button("Exporter CSV", df.to_csv(index=False), f"photo_{ts}.csv", "text/csv", use_container_width=True)
         with ec2:
-            st.download_button("📥 JSON", json.dumps(r['dets'], indent=2, ensure_ascii=False, default=str), f"photo_{ts}.json", "application/json", use_container_width=True)
+            st.download_button("Exporter JSON", json.dumps(r['dets'], indent=2, ensure_ascii=False, default=str), f"photo_{ts}.json", "application/json", use_container_width=True)
 
 # ╔══════════════════════════════════════════════════════╗
 # ║  TAB 3 — INVENTAIRE                                  ║
 # ╚══════════════════════════════════════════════════════╝
 with tab_inv:
-    inv_s_up, inv_s_cam = st.tabs(["📁 Upload produits", "📷 Caméra"])
+    inv_s_up, inv_s_cam = st.tabs(["Upload produits", "Caméra"])
 
     with inv_s_up:
-        inv_files = st.file_uploader(
-            "Scannez un ou plusieurs produits",
-            type=["jpg","jpeg","png"], accept_multiple_files=True,
-            key=f"inv_up_{st.session_state.inv_upload_key}",
-        )
+        inv_files = st.file_uploader("", type=["jpg","jpeg","png"], accept_multiple_files=True,
+                                     key=f"inv_up_{st.session_state.inv_upload_key}", label_visibility="collapsed")
         if inv_files and models_ok:
             prog = st.progress(0)
             for i, f in enumerate(inv_files):
@@ -1018,22 +969,35 @@ with tab_inv:
         if not st.session_state.inv_cam_active:
             st.markdown("""
             <div class="cam-placeholder">
-              <div class="cam-placeholder-title">📱 Caméra arrière</div>
+              <div class="cam-placeholder-title">Caméra inactive</div>
               <div class="cam-placeholder-sub">Scannez un produit à la fois</div>
             </div>""", unsafe_allow_html=True)
             ic1, ic2, ic3 = st.columns([1, 1, 1])
             with ic1:
-                if st.button("▶ Démarrer", key="inv_cam_start", type="primary", use_container_width=True):
+                if st.button("Démarrer", key="inv_cam_start", type="primary", use_container_width=True):
                     st.session_state.inv_cam_active = True
                     st.rerun()
         else:
+            icf1, icf2, icf3 = st.columns([1, 1, 1])
+            with icf1:
+                inv_is_back = (st.session_state.inv_cam_facing == 'back')
+                if st.button("Caméra arrière", key="inv_cam_back", type="primary" if inv_is_back else "secondary", use_container_width=True):
+                    st.session_state.inv_cam_facing = 'back'
+                    st.rerun()
+            with icf2:
+                if st.button("Selfie", key="inv_cam_front", type="primary" if not inv_is_back else "secondary", use_container_width=True):
+                    st.session_state.inv_cam_facing = 'front'
+                    st.rerun()
+
             inv_cam = st.camera_input("", key="inv_cam_input", label_visibility="collapsed")
+            inv_facing_val = "environment" if st.session_state.inv_cam_facing == 'back' else "user"
+            inject_cam_facing("inv", inv_facing_val)
 
             ic1, ic2, ic3 = st.columns([1, 1, 1])
             with ic1:
-                st.button("▶ Démarrer", key="inv_cam_start2", disabled=True, use_container_width=True)
+                st.button("Démarrer", key="inv_cam_start2", disabled=True, use_container_width=True)
             with ic2:
-                if inv_cam and st.button("📸 Capturer & Scanner", key="inv_cam_use", type="primary", use_container_width=True):
+                if inv_cam and st.button("Capturer", key="inv_cam_use", type="primary", use_container_width=True):
                     with st.spinner("Classification..."):
                         res = run_inventory_pipeline(inv_cam.getvalue(), sku_model, idx_to_class, sku_catalog, upscale_factor)
                         res['id'] = st.session_state.inv_next_id
@@ -1042,7 +1006,7 @@ with tab_inv:
                     st.session_state.inv_cam_active = False
                     st.rerun()
             with ic3:
-                if st.button("⏹ Arrêter", key="inv_cam_stop", type="secondary", use_container_width=True):
+                if st.button("Arrêter", key="inv_cam_stop", type="secondary", use_container_width=True):
                     st.session_state.inv_cam_active = False
                     st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1052,21 +1016,19 @@ with tab_inv:
     st.markdown('<hr>', unsafe_allow_html=True)
 
     if pending:
-        bh1, bh2 = st.columns([6, 2])
+        bh1, bh2, bh3 = st.columns([4, 1, 1])
         with bh1:
             n_p = len(pending)
             st.markdown('<div class="section-title">En attente <span>· ' + str(n_p) + ' produit' + ("s" if n_p>1 else "") + '</span></div>', unsafe_allow_html=True)
         with bh2:
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("➕ Tout", use_container_width=True, type="primary", key="add_all", help="Ajouter tous les produits"):
-                    st.session_state.inv_validated.extend(st.session_state.inv_pending)
-                    st.session_state.inv_pending = []
-                    st.rerun()
-            with c2:
-                if st.button("🗑 Tout", use_container_width=True, key="del_all", help="Supprimer tous"):
-                    st.session_state.inv_pending = []
-                    st.rerun()
+            if st.button("Ajouter tout", use_container_width=True, type="primary", key="add_all"):
+                st.session_state.inv_validated.extend(st.session_state.inv_pending)
+                st.session_state.inv_pending = []
+                st.rerun()
+        with bh3:
+            if st.button("Tout supprimer", use_container_width=True, key="del_all"):
+                st.session_state.inv_pending = []
+                st.rerun()
 
         to_add, to_del = [], []
         for row_items in [pending[i:i+3] for i in range(0, len(pending), 3)]:
@@ -1074,16 +1036,14 @@ with tab_inv:
             for col_el, item in zip(cols, row_items):
                 with col_el:
                     st.markdown(render_inv_card(item), unsafe_allow_html=True)
-                    # Actions avec padding
-                    st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
                     ba, bb = st.columns(2)
                     with ba:
-                        if st.button("➕ Ajouter", key=f"ia_{item['id']}", use_container_width=True, type="primary"):
+                        if st.button("Ajouter", key=f"ia_{item['id']}", use_container_width=True, type="primary"):
                             to_add.append(item['id'])
                     with bb:
-                        if st.button("✕", key=f"id_{item['id']}", use_container_width=True, type="secondary"):
+                        if st.button("Retirer", key=f"id_{item['id']}", use_container_width=True, type="secondary"):
                             to_del.append(item['id'])
-                    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+                    st.markdown('<div style="height:6px"></div>', unsafe_allow_html=True)
 
         if to_add:
             for iid in to_add:
@@ -1105,12 +1065,12 @@ with tab_inv:
     # Validated
     st.markdown('<hr>', unsafe_allow_html=True)
     validated = st.session_state.inv_validated
-    vh1, vh2 = st.columns([6, 2])
+    vh1, vh2 = st.columns([4, 1])
     with vh1:
         nv = len(validated)
         st.markdown('<div class="section-title">Inventaire validé <span>· ' + str(nv) + ' produit' + ("s" if nv!=1 else "") + '</span></div>', unsafe_allow_html=True)
     with vh2:
-        if validated and st.button("🗑 Tout effacer", use_container_width=True, key="clear_inv"):
+        if validated and st.button("Tout effacer", use_container_width=True, key="clear_inv"):
             st.session_state.inv_validated = []
             st.rerun()
 
@@ -1133,15 +1093,39 @@ with tab_inv:
                           '<td style="color:' + col + ';font-weight:700">' + f"{conf:.1%}" + '</td></tr>')
         st.markdown('<div class="tbl-wrap"><table><thead><tr><th>Produit</th><th>SKU</th><th>Marque</th><th>Capacité</th><th>Emballage</th><th>Saveur</th><th>Confiance</th></tr></thead><tbody>' + rows_html + '</tbody></table></div>', unsafe_allow_html=True)
 
+        st.markdown('<div style="font-size:12px;color:var(--text-muted);margin:16px 0 8px;">Supprimer individuellement</div>', unsafe_allow_html=True)
+        del_ids = []
+        for it in validated:
+            rc1, rc2, rc3 = st.columns([3, 1, 1])
+            conf = it['conf']
+            if conf > 0.7:
+                col = "var(--green)"
+            elif conf > 0.4:
+                col = "var(--amber)"
+            elif conf > 0.2:
+                col = "var(--orange)"
+            else:
+                col = "var(--red)"
+            with rc1:
+                st.markdown('<span style="font-weight:600;font-size:13px">' + it["nom"] + '</span>&nbsp;&nbsp;<span style="color:var(--blue);font-family:var(--font-mono);font-size:11px">' + it["sku"] + '</span>', unsafe_allow_html=True)
+            with rc2:
+                st.markdown('<span style="color:' + col + ';font-weight:700;font-family:var(--font-mono);font-size:12px">' + f"{conf:.1%}" + '</span>', unsafe_allow_html=True)
+            with rc3:
+                if st.button("✕", key=f"dv_{it['id']}", use_container_width=True):
+                    del_ids.append(it['id'])
+        if del_ids:
+            st.session_state.inv_validated = [x for x in st.session_state.inv_validated if x['id'] not in del_ids]
+            st.rerun()
+
         st.markdown('<hr>', unsafe_allow_html=True)
         ts = datetime.now().strftime('%Y%m%d_%H%M%S')
         inv_rows = [{"Produit": it['nom'], "SKU": it['sku'], "Marque": it['brand'], "Capacité": it['capacity'], "Emballage": it['emballage'], "Saveur": it['saveur'], "Confiance": f"{it['conf']:.1%}"} for it in validated]
         ec1, ec2 = st.columns(2)
         with ec1:
-            st.download_button("📥 CSV", pd.DataFrame(inv_rows).to_csv(index=False), f"inventaire_{ts}.csv", "text/csv", use_container_width=True)
+            st.download_button("Exporter CSV", pd.DataFrame(inv_rows).to_csv(index=False), f"inventaire_{ts}.csv", "text/csv", use_container_width=True)
         with ec2:
             inv_json = [{k: v for k, v in it.items() if k != 'crop_bytes'} for it in validated]
-            st.download_button("📥 JSON", json.dumps(inv_json, indent=2, ensure_ascii=False, default=str), f"inventaire_{ts}.json", "application/json", use_container_width=True)
+            st.download_button("Exporter JSON", json.dumps(inv_json, indent=2, ensure_ascii=False, default=str), f"inventaire_{ts}.json", "application/json", use_container_width=True)
     else:
         st.markdown("""
         <div class="empty-state">
