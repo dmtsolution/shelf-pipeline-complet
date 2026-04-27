@@ -1,4 +1,4 @@
-# app.py — SKU Recognition Pipeline · Streamlit · Version Finale v2
+# app.py — SKU Recognition Pipeline · Streamlit · Version Finale v3
 import streamlit as st
 import torch
 import torch.nn as nn
@@ -24,8 +24,7 @@ MAPPING_PATH    = "label_map.json"
 CSV_PATH        = "sku_catalog.csv"
 IMG_SIZE        = 224
 
-CLASS_NAMES = ['boisson_energetique','dessert','eau','fromage',
-               'jus','lait','soda','yaourt']
+CLASS_NAMES = ['boisson_energetique','dessert','eau','fromage','jus','lait','soda','yaourt']
 
 val_transforms = transforms.Compose([
     transforms.Resize(int(IMG_SIZE * 1.14)),
@@ -35,24 +34,19 @@ val_transforms = transforms.Compose([
 ])
 
 # ══════════════════════════════════════════════════════
-# MODELS
+# MODELS (cachés)
 # ══════════════════════════════════════════════════════
 @st.cache_resource
-def load_yolo_model(path):
-    return YOLO(path)
+def load_yolo_model(path): return YOLO(path)
 
 @st.cache_resource
 def load_sku_model(model_path, labels_path):
-    with open(labels_path) as f:
-        label_map = json.load(f)
+    with open(labels_path) as f: label_map = json.load(f)
     idx_to_class = {int(k): v for k, v in label_map.items()}
     nc = len(idx_to_class)
     model = timm.create_model('mobilenetv3_large_100', pretrained=False, num_classes=nc)
-    if hasattr(model, 'classifier'):
-        model.classifier = nn.Linear(model.classifier.in_features, nc)
     sd = torch.load(model_path, map_location='cpu')
-    if any(k.startswith('module.') for k in sd):
-        sd = {k.replace('module.',''):v for k,v in sd.items()}
+    if any(k.startswith('module.') for k in sd): sd = {k.replace('module.',''):v for k,v in sd.items()}
     model.load_state_dict(sd, strict=True)
     model.to(DEVICE).eval()
     return model, idx_to_class, nc
@@ -87,17 +81,14 @@ def predict_sku(model, img_np, idx_to_class, upscale=2.5):
     with torch.no_grad():
         probs = torch.softmax(model(t), dim=1)[0]
         topk  = probs.topk(min(5, len(idx_to_class)))
-    skus  = [idx_to_class[i.item()] for i in topk.indices]
-    confs = [v.item() for v in topk.values]
-    return skus, confs
+    return [idx_to_class[i.item()] for i in topk.indices], [v.item() for v in topk.values]
 
 def np_to_bytes(img_np):
     buf = io.BytesIO()
     Image.fromarray(img_np).save(buf, format='JPEG', quality=88)
     return buf.getvalue()
 
-def b64(data):
-    return base64.b64encode(data).decode()
+def b64(data): return base64.b64encode(data).decode()
 
 # ══════════════════════════════════════════════════════
 # PIPELINES
@@ -179,7 +170,6 @@ def conf_cls(c):
     return "cv"
 
 def render_annotated_image_with_modal(raw_bytes, annotated_np, crops_data, detections):
-    """Render image with clickable bboxes + modal overlay using st_html."""
     ann_bytes = np_to_bytes(annotated_np)
     ann_h, ann_w = annotated_np.shape[:2]
 
@@ -198,11 +188,12 @@ def render_annotated_image_with_modal(raw_bytes, annotated_np, crops_data, detec
             f'title="{cd["stage2_nom"]}"></div>'
         )
 
-    panel_data_json = json.dumps([
-        {
-            "img":  f"data:image/jpeg;base64,{b64(cd['crop_bytes'])}",
-            "nom":  cd['stage2_nom'],
-            "sku":  cd['stage2_sku'],
+    panel_data = []
+    for cd in crops_data:
+        panel_data.append({
+            "img": f"data:image/jpeg;base64,{b64(cd['crop_bytes'])}",
+            "nom": cd['stage2_nom'],
+            "sku": cd['stage2_sku'],
             "conf": round(cd['stage2_conf'], 3),
             "stage1": cd['stage1'],
             "brand": cd['brand'],
@@ -210,162 +201,90 @@ def render_annotated_image_with_modal(raw_bytes, annotated_np, crops_data, detec
             "emballage": cd['emballage'],
             "saveur": cd['saveur'],
             "cc": conf_cls(cd['stage2_conf']),
-        }
-        for cd in crops_data
-    ], ensure_ascii=False)
+        })
+    panel_data_json = json.dumps(panel_data, ensure_ascii=False)
 
-    html_content = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    return f"""
+    <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        *{{margin:0;padding:0;box-sizing:border-box;}}
-        body{{background:#F4F5F8;font-family:'Inter',-apple-system,sans-serif;overflow:hidden;}}
-        .result-images{{display:grid;grid-template-columns:1fr 1fr;gap:16px;}}
-        .result-card{{background:#fff;border:1px solid #E2E6EF;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);}}
-        .result-card-header{{padding:8px 14px;border-bottom:1px solid #E2E6EF;font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.06em;text-transform:uppercase;}}
-        .result-card-header span{{font-weight:500;color:#6C63FF;text-transform:none;letter-spacing:0;}}
-        .img-container{{position:relative;line-height:0;cursor:crosshair;}}
-        .img-container img{{width:100%;display:block;}}
-        .bbox-z{{position:absolute;border:2px solid transparent;border-radius:3px;cursor:pointer;transition:background .12s;}}
-        .bbox-z:hover{{background:rgba(255,255,255,.18);}}
-        .bbox-z.ch{{border-color:rgba(16,185,129,.85);}}
-        .bbox-z.cm{{border-color:rgba(245,158,11,.85);}}
-        .bbox-z.cl{{border-color:rgba(249,115,22,.85);}}
-        .bbox-z.cv{{border-color:rgba(239,68,68,.85);}}
-        /* Modal overlay */
-        .modal-overlay{{display:none;position:fixed;inset:0;z-index:9998;background:rgba(26,29,46,.5);backdrop-filter:blur(7px);align-items:center;justify-content:center;}}
-        .modal-overlay.open{{display:flex;}}
-        .modal{{background:#fff;border-radius:20px;width:440px;max-width:94vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.12),0 0 0 1px #E2E6EF;}}
-        .modal-header{{padding:16px 20px 12px;border-bottom:1px solid #E2E6EF;display:flex;align-items:center;justify-content:space-between;gap:14px;position:sticky;top:0;background:#fff;z-index:1;border-radius:20px 20px 0 0;}}
-        .modal-title{{font-size:18px;font-weight:800;color:#1A1D2E;}}
-        .modal-close{{width:32px;height:32px;border-radius:8px;background:#F0F2F7;border:1px solid #E2E6EF;cursor:pointer;font-size:15px;color:#6B7280;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;}}
-        .modal-close:hover{{background:#EF4444;color:#fff;border-color:#EF4444;}}
-        .modal-body{{padding:18px 20px;display:flex;flex-direction:column;gap:16px;}}
-        .modal-crop-wrap{{display:flex;justify-content:center;background:#F0F2F7;border-radius:8px;padding:14px;border:1px solid #E2E6EF;}}
-        .modal-crop-img{{max-height:150px;max-width:100%;border-radius:6px;object-fit:contain;}}
-        .modal-conf-row{{display:flex;align-items:center;gap:16px;}}
-        .modal-conf-value{{font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:800;flex-shrink:0;}}
-        .modal-conf-bar{{flex:1;}}
-        .modal-conf-label{{font-size:11px;color:#6B7280;font-family:'JetBrains Mono',monospace;margin-bottom:6px;}}
-        .modal-conf-track{{height:8px;background:#E2E6EF;border-radius:4px;overflow:hidden;}}
-        .modal-conf-fill{{height:100%;border-radius:4px;transition:width .6s ease;}}
-        .modal-fields{{display:grid;grid-template-columns:1fr 1fr;gap:10px;}}
-        .modal-field{{background:#F0F2F7;border:1px solid #E2E6EF;border-radius:8px;padding:10px 12px;}}
-        .modal-field-key{{font-size:10px;color:#6B7280;font-family:'JetBrains Mono',monospace;letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px;}}
-        .modal-field-val{{font-size:13px;font-weight:700;color:#1A1D2E;}}
-        .modal-top5{{background:#F0F2F7;border:1px solid #E2E6EF;border-radius:8px;padding:12px 14px;}}
-        .modal-top5-title{{font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;}}
-        .modal-top5-item{{display:flex;align-items:center;gap:8px;padding:5px 0;font-family:'JetBrains Mono',monospace;font-size:12px;border-bottom:1px solid #E2E6EF;}}
-        .modal-top5-item:last-child{{border-bottom:none;}}
-        .modal-top5-rank{{color:#9CA3AF;width:18px;flex-shrink:0;}}
-        .modal-top5-sku{{flex:1;color:#6C63FF;word-break:break-word;}}
-        .modal-top5-bar{{width:80px;height:4px;background:#E2E6EF;border-radius:2px;overflow:hidden;}}
-        .modal-top5-fill{{height:100%;border-radius:2px;background:#6C63FF;}}
-        .modal-top5-conf{{color:#6B7280;width:44px;text-align:right;}}
-        .section-title{{font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.06em;text-transform:uppercase;margin-bottom:12px;}}
-        @media(max-width:860px){{
-            .result-images{{grid-template-columns:1fr;}}
-            .modal-fields{{grid-template-columns:1fr;}}
-        }}
-    </style>
-    </head>
-    <body>
+    *{{margin:0;padding:0;box-sizing:border-box;}}body{{background:#F4F5F8;font-family:'Inter',-apple-system,sans-serif;}}
+    .result-images{{display:grid;grid-template-columns:1fr 1fr;gap:14px;}}
+    .result-card{{background:#fff;border:1px solid #E2E6EF;border-radius:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);}}
+    .result-card-header{{padding:10px 16px;border-bottom:1px solid #E2E6EF;font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.06em;text-transform:uppercase;}}
+    .result-card-header span{{font-weight:500;color:#6C63FF;text-transform:none;letter-spacing:0;}}
+    .img-container{{position:relative;line-height:0;cursor:crosshair;}}
+    .img-container img{{width:100%;display:block;}}
+    .bbox-z{{position:absolute;border:2px solid transparent;border-radius:3px;cursor:pointer;transition:all .15s;}}
+    .bbox-z:hover{{background:rgba(255,255,255,.2);box-shadow:0 0 0 4px rgba(108,99,255,.25);}}
+    .bbox-z.ch{{border-color:rgba(16,185,129,.9);}}.bbox-z.cm{{border-color:rgba(245,158,11,.9);}}
+    .bbox-z.cl{{border-color:rgba(249,115,22,.9);}}.bbox-z.cv{{border-color:rgba(239,68,68,.9);}}
+    .modal-overlay{{display:none;position:fixed;inset:0;z-index:99999;background:rgba(26,29,46,.55);backdrop-filter:blur(8px);align-items:center;justify-content:center;}}
+    .modal-overlay.open{{display:flex;}}
+    .modal{{background:#fff;border-radius:20px;width:480px;max-width:94vw;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2),0 0 0 1px #E2E6EF;transform:translateY(16px) scale(.97);transition:transform .25s;}}
+    .modal-overlay.open .modal{{transform:translateY(0) scale(1);}}
+    .modal-header{{padding:18px 22px 14px;border-bottom:1px solid #E2E6EF;display:flex;align-items:flex-start;justify-content:space-between;gap:14px;position:sticky;top:0;background:#fff;z-index:1;border-radius:20px 20px 0 0;}}
+    .modal-title{{font-size:18px;font-weight:800;color:#1A1D2E;line-height:1.25;}}
+    .modal-subtitle{{font-size:12px;color:#6B7280;font-family:'JetBrains Mono',monospace;margin-top:2px;}}
+    .modal-close{{width:32px;height:32px;border-radius:8px;background:#F0F2F7;border:1px solid #E2E6EF;cursor:pointer;font-size:15px;color:#6B7280;display:flex;align-items:center;justify-content:center;transition:all .15s;flex-shrink:0;}}
+    .modal-close:hover{{background:#EF4444;color:#fff;border-color:#EF4444;}}
+    .modal-body{{padding:20px 22px;display:flex;flex-direction:column;gap:16px;}}
+    .modal-crop-wrap{{display:flex;justify-content:center;background:#F0F2F7;border-radius:8px;padding:14px;border:1px solid #E2E6EF;}}
+    .modal-crop-img{{max-height:160px;max-width:100%;border-radius:6px;object-fit:contain;}}
+    .modal-conf-row{{display:flex;align-items:center;gap:16px;}}
+    .modal-conf-value{{font-family:'JetBrains Mono',monospace;font-size:34px;font-weight:800;flex-shrink:0;}}
+    .modal-conf-bar{{flex:1;}}
+    .modal-conf-label{{font-size:11px;color:#6B7280;font-family:'JetBrains Mono',monospace;margin-bottom:6px;}}
+    .modal-conf-track{{height:8px;background:#E2E6EF;border-radius:4px;overflow:hidden;}}
+    .modal-conf-fill{{height:100%;border-radius:4px;transition:width .6s ease;}}
+    .modal-fields{{display:grid;grid-template-columns:1fr 1fr;gap:10px;}}
+    .modal-field{{background:#F0F2F7;border:1px solid #E2E6EF;border-radius:8px;padding:10px 12px;}}
+    .modal-field-key{{font-size:10px;color:#6B7280;font-family:'JetBrains Mono',monospace;letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px;}}
+    .modal-field-val{{font-size:13px;font-weight:700;color:#1A1D2E;}}
+    .modal-top5{{background:#F0F2F7;border:1px solid #E2E6EF;border-radius:8px;padding:12px 14px;}}
+    .modal-top5-title{{font-size:11px;font-weight:700;color:#6B7280;letter-spacing:.07em;text-transform:uppercase;margin-bottom:8px;}}
+    .modal-top5-item{{display:flex;align-items:center;gap:8px;padding:5px 0;font-family:'JetBrains Mono',monospace;font-size:12px;border-bottom:1px solid #E2E6EF;}}
+    .modal-top5-item:last-child{{border-bottom:none;}}
+    .modal-top5-rank{{color:#9CA3AF;width:18px;flex-shrink:0;}}
+    .modal-top5-sku{{flex:1;color:#6C63FF;word-break:break-word;}}
+    .modal-top5-bar{{width:80px;height:4px;background:#E2E6EF;border-radius:2px;overflow:hidden;}}
+    .modal-top5-fill{{height:100%;border-radius:2px;background:#6C63FF;}}
+    .modal-top5-conf{{color:#6B7280;width:44px;text-align:right;}}
+    @media(max-width:860px){{.result-images{{grid-template-columns:1fr;}}.modal-fields{{grid-template-columns:1fr;}}}}
+    </style></head><body>
     <div class="result-images">
-      <div class="result-card">
-        <div class="result-card-header">📸 Image originale</div>
-        <img src="data:image/jpeg;base64,{b64(raw_bytes)}" style="width:100%;display:block;" alt="">
-      </div>
-      <div class="result-card">
-        <div class="result-card-header">🎯 Résultat annoté <span>· cliquer sur un produit</span></div>
-        <div class="img-container">
-          <img src="data:image/jpeg;base64,{b64(ann_bytes)}" alt="">
-          {bbox_zones}
-        </div>
-      </div>
+      <div class="result-card"><div class="result-card-header">📸 Image originale</div><img src="data:image/jpeg;base64,{b64(raw_bytes)}" style="width:100%;display:block;" alt=""></div>
+      <div class="result-card"><div class="result-card-header">🎯 Résultat annoté <span>· cliquer sur un produit</span></div><div class="img-container"><img src="data:image/jpeg;base64,{b64(ann_bytes)}" alt="">{bbox_zones}</div></div>
     </div>
-
-    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()">
-      <div class="modal" onclick="event.stopPropagation()">
-        <div class="modal-header">
-          <div class="modal-title" id="modalTitle">—</div>
-          <button class="modal-close" onclick="closeModal()">✕</button>
-        </div>
-        <div class="modal-body">
-          <div class="modal-crop-wrap">
-            <img class="modal-crop-img" id="modalCrop" src="" alt="">
-          </div>
-          <div class="modal-conf-row">
-            <div class="modal-conf-value" id="modalConf">—</div>
-            <div class="modal-conf-bar">
-              <div class="modal-conf-label">Confiance SKU</div>
-              <div class="modal-conf-track"><div class="modal-conf-fill" id="modalConfFill" style="width:0%"></div></div>
-            </div>
-          </div>
-          <div class="modal-fields" id="modalFields"></div>
-          <div class="modal-top5">
-            <div class="modal-top5-title">🏆 Top-5 prédictions</div>
-            <div id="modalTop5"></div>
-          </div>
-        </div>
+    <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"><div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header"><div><div class="modal-title" id="modalTitle">—</div><div class="modal-subtitle" id="modalSubtitle">—</div></div><button class="modal-close" onclick="closeModal()">✕</button></div>
+      <div class="modal-body">
+        <div class="modal-crop-wrap"><img class="modal-crop-img" id="modalCrop" src="" alt=""></div>
+        <div class="modal-conf-row"><div class="modal-conf-value" id="modalConf">—</div><div class="modal-conf-bar"><div class="modal-conf-label">Confiance SKU</div><div class="modal-conf-track"><div class="modal-conf-fill" id="modalConfFill" style="width:0%"></div></div></div></div>
+        <div class="modal-fields" id="modalFields"></div>
+        <div class="modal-top5"><div class="modal-top5-title">🏆 Top-5 prédictions</div><div id="modalTop5"></div></div>
       </div>
-    </div>
-
+    </div></div>
     <script>
-    var DATA = {panel_data_json};
-    var CC = {{ch:'#10B981',cm:'#F59E0B',cl:'#F97316',cv:'#EF4444'}};
-
-    function openModal(i) {{
-        var d = DATA[i];
-        var col = CC[d.cc] || '#6C63FF';
-        var pct = (d.conf * 100).toFixed(1) + '%';
-
-        document.getElementById('modalTitle').textContent = d.nom;
-        document.getElementById('modalCrop').src = d.img;
-        document.getElementById('modalConf').textContent = pct;
-        document.getElementById('modalConf').style.color = col;
-        document.getElementById('modalConfFill').style.width = pct;
-        document.getElementById('modalConfFill').style.background = col;
-
-        var fieldsHTML = '';
-        var fields = [
-            ['Marque', d.brand], ['Capacité', d.capacity],
-            ['Emballage', d.emballage], ['Saveur', d.saveur],
-            ['Stage 1', d.stage1]
-        ];
-        for (var f = 0; f < fields.length; f++) {{
-            fieldsHTML += '<div class="modal-field"><div class="modal-field-key">' + fields[f][0] + '</div><div class="modal-field-val">' + fields[f][1] + '</div></div>';
-        }}
-        document.getElementById('modalFields').innerHTML = fieldsHTML;
-
-        var top5HTML = '';
-        for (var t = 0; t < d.top5.length; t++) {{
-            var tp = (d.top5[t].conf * 100).toFixed(1) + '%';
-            top5HTML += '<div class="modal-top5-item"><span class="modal-top5-rank">' + (t+1) + '.</span><span class="modal-top5-sku">' + d.top5[t].sku + '</span><div class="modal-top5-bar"><div class="modal-top5-fill" style="width:' + tp + '"></div></div><span class="modal-top5-conf">' + tp + '</span></div>';
-        }}
-        document.getElementById('modalTop5').innerHTML = top5HTML;
-
-        document.getElementById('modalOverlay').classList.add('open');
-    }}
-
-    function closeModal() {{
-        document.getElementById('modalOverlay').classList.remove('open');
-    }}
-
-    document.addEventListener('keydown', function(e) {{
-        if (e.key === 'Escape') closeModal();
-    }});
-    </script>
-    </body>
-    </html>
-    """
-    return html_content
+    var DATA={panel_data_json};
+    var CC={{ch:'#10B981',cm:'#F59E0B',cl:'#F97316',cv:'#EF4444'}};
+    function openModal(i){{var d=DATA[i];var col=CC[d.cc]||'#6C63FF';var pct=(d.conf*100).toFixed(1)+'%';
+    document.getElementById('modalTitle').textContent=d.nom;
+    document.getElementById('modalSubtitle').textContent='SKU: '+d.sku+'  ·  '+d.stage1;
+    document.getElementById('modalCrop').src=d.img;
+    document.getElementById('modalConf').textContent=pct;document.getElementById('modalConf').style.color=col;
+    document.getElementById('modalConfFill').style.width=pct;document.getElementById('modalConfFill').style.background=col;
+    var fields=[['Marque',d.brand],['Capacité',d.capacity],['Emballage',d.emballage],['Saveur',d.saveur],['Stage 1',d.stage1]];
+    var fHTML='';for(var f=0;f<fields.length;f++){{fHTML+='<div class="modal-field"><div class="modal-field-key">'+fields[f][0]+'</div><div class="modal-field-val">'+fields[f][1]+'</div></div>';}}
+    document.getElementById('modalFields').innerHTML=fHTML;
+    var t5HTML='';for(var t=0;t<d.top5.length;t++){{var tp=(d.top5[t].conf*100).toFixed(1)+'%';t5HTML+='<div class="modal-top5-item"><span class="modal-top5-rank">'+(t+1)+'.</span><span class="modal-top5-sku">'+d.top5[t].sku+'</span><div class="modal-top5-bar"><div class="modal-top5-fill" style="width:'+tp+'"></div></div><span class="modal-top5-conf">'+tp+'</span></div>';}}
+    document.getElementById('modalTop5').innerHTML=t5HTML;
+    document.getElementById('modalOverlay').classList.add('open');}}
+    function closeModal(){{document.getElementById('modalOverlay').classList.remove('open');}}
+    document.addEventListener('keydown',function(e){{if(e.key==='Escape')closeModal();}});
+    </script></body></html>"""
 
 def render_metrics(total, hi, me, lo, vl):
-    return f"""
-    <div class="metrics-row">
+    return f"""<div class="metrics-row">
       <div class="metric metric-total"><div class="metric-val">{total}</div><div class="metric-lbl">Total</div></div>
       <div class="metric metric-high"><div class="metric-val">{hi}</div><div class="metric-lbl">&gt;70%</div></div>
       <div class="metric metric-med"><div class="metric-val">{me}</div><div class="metric-lbl">40–70%</div></div>
@@ -374,67 +293,84 @@ def render_metrics(total, hi, me, lo, vl):
     </div>"""
 
 def render_detection_card(cd):
-    cc   = conf_cls(cd['stage2_conf'])
-    conf = cd['stage2_conf']
+    cc   = conf_cls(cd['stage2_conf']); conf = cd['stage2_conf']
     img  = f"data:image/jpeg;base64,{b64(cd['crop_bytes'])}"
-    brand_pill = (f'<span class="pill pill-b">{cd["brand"]}</span>' if cd['brand'] != 'N/A' else '')
-    nom_produit = cd['stage2_nom'].replace("'", "\\'").replace('"', '&quot;')
-
-    top5_rows = ""
-    for j, (s, c) in enumerate(cd['top5'][:5]):
-        top5_rows += f'<div class="top5-item"><span class="top5-i">{j+1}.</span><span class="top5-s">{s}</span><span class="top5-c">{c:.1%}</span></div>'
-
-    return f"""
-    <div class="det-card {cc}" onclick="this.classList.toggle('open')">
-      <div class="det-row">
-        <img class="det-thumb" src="{img}" alt="">
-        <div class="det-body">
-          <div class="det-name">{nom_produit}</div>
-          <div class="det-pills">
-            <span class="pill pill-f">{cd['stage1'].split('(')[0].strip()}</span>
-            <span class="pill pill-s">{cd['stage2_sku']}</span>
-            {brand_pill}
-          </div>
-        </div>
-        <div class="det-pct">{conf:.0%}</div>
-        <div class="det-chevron">&#9658;</div>
-      </div>
-      <div class="det-expand">
-        <div class="det-expand-inner">
-          <img class="det-large-img" src="{img}" alt="">
-          <div class="det-fields">
-            <div class="det-field"><span class="det-fk">Stage 1</span><span class="det-fv">{cd['stage1']}</span></div>
-            <div class="det-field"><span class="det-fk">SKU</span><span class="det-fv" style="color:var(--blue)">{cd['stage2_sku']}</span></div>
-            <div class="det-field"><span class="det-fk">Produit</span><span class="det-fv">{nom_produit}</span></div>
-            <div class="det-field"><span class="det-fk">Marque</span><span class="det-fv">{cd['brand']}</span></div>
-            <div class="det-field"><span class="det-fk">Capacité</span><span class="det-fv">{cd['capacity']}</span></div>
-            <div class="det-field"><span class="det-fk">Emballage</span><span class="det-fv">{cd['emballage']}</span></div>
-            <div class="det-field"><span class="det-fk">Saveur</span><span class="det-fv">{cd['saveur']}</span></div>
-            <div class="conf-bar-wrap {cc}">
-              <div class="conf-bar-lbl">Confiance · {conf:.1%}</div>
-              <div class="conf-bar-track"><div class="conf-bar-fill" style="width:{conf*100:.1f}%"></div></div>
-            </div>
-            <div class="top5"><div class="top5-title">🏆 Top-5</div>{top5_rows}</div>
-          </div>
-        </div>
-      </div>
-    </div>"""
+    brand_pill = f'<span class="pill pill-b">{cd["brand"]}</span>' if cd['brand']!='N/A' else ''
+    nom = cd['stage2_nom'].replace("'","\\'").replace('"','&quot;')
+    t5="".join(f'<div class="top5-item"><span class="top5-i">{j+1}.</span><span class="top5-s">{s}</span><span class="top5-c">{c:.1%}</span></div>' for j,(s,c) in enumerate(cd['top5'][:5]))
+    return f"""<div class="det-card {cc}" onclick="this.classList.toggle('open')">
+      <div class="det-row"><img class="det-thumb" src="{img}" alt=""><div class="det-body"><div class="det-name">{nom}</div><div class="det-pills"><span class="pill pill-f">{cd['stage1'].split('(')[0].strip()}</span><span class="pill pill-s">{cd['stage2_sku']}</span>{brand_pill}</div></div><div class="det-pct">{conf:.0%}</div><div class="det-chevron">&#9658;</div></div>
+      <div class="det-expand"><div class="det-expand-inner"><img class="det-large-img" src="{img}" alt=""><div class="det-fields">
+        <div class="det-field"><span class="det-fk">Stage 1</span><span class="det-fv">{cd['stage1']}</span></div>
+        <div class="det-field"><span class="det-fk">SKU</span><span class="det-fv" style="color:var(--blue)">{cd['stage2_sku']}</span></div>
+        <div class="det-field"><span class="det-fk">Produit</span><span class="det-fv">{nom}</span></div>
+        <div class="det-field"><span class="det-fk">Marque</span><span class="det-fv">{cd['brand']}</span></div>
+        <div class="det-field"><span class="det-fk">Capacité</span><span class="det-fv">{cd['capacity']}</span></div>
+        <div class="det-field"><span class="det-fk">Emballage</span><span class="det-fv">{cd['emballage']}</span></div>
+        <div class="det-field"><span class="det-fk">Saveur</span><span class="det-fv">{cd['saveur']}</span></div>
+        <div class="conf-bar-wrap {cc}"><div class="conf-bar-lbl">Confiance · {conf:.1%}</div><div class="conf-bar-track"><div class="conf-bar-fill" style="width:{conf*100:.1f}%"></div></div></div>
+        <div class="top5"><div class="top5-title">🏆 Top-5</div>{t5}</div>
+      </div></div></div></div>"""
 
 def render_inv_card(item):
-    conf = item['conf']
-    col = "var(--green)" if conf>0.7 else "var(--amber)" if conf>0.4 else "var(--orange)" if conf>0.2 else "var(--red)"
-    return f"""
-    <div class="inv-card">
-      <img class="inv-card-img" src="data:image/jpeg;base64,{b64(item['crop_bytes'])}" alt="">
-      <div class="inv-card-name" title="{item['nom']}">{item['nom']}</div>
-      <div class="inv-card-sku">{item['sku']}</div>
-      <div class="inv-card-conf" style="color:{col}">{conf:.1%}</div>
-    </div>"""
+    conf=item['conf'];col="var(--green)" if conf>0.7 else "var(--amber)" if conf>0.4 else "var(--orange)" if conf>0.2 else "var(--red)"
+    return f"""<div class="inv-card"><img class="inv-card-img" src="data:image/jpeg;base64,{b64(item['crop_bytes'])}" alt=""><div class="inv-card-name" title="{item['nom']}">{item['nom']}</div><div class="inv-card-sku">{item['sku']}</div><div class="inv-card-conf" style="color:{col}">{conf:.1%}</div></div>"""
+
+# ══════════════════════════════════════════════════════
+# CAMERA BACK-FORCING JS (injected ONCE)
+# ══════════════════════════════════════════════════════
+CAMERA_FORCE_JS = """
+<script>
+(function() {
+    if (window.__camForced) return;
+    window.__camForced = true;
+
+    function forceBackCamera() {
+        // Find ALL video elements inside camera inputs
+        var videos = document.querySelectorAll('[data-testid="stCameraInput"] video');
+        videos.forEach(function(v) {
+            if (!v.srcObject) return;
+            var tracks = v.srcObject.getVideoTracks();
+            if (tracks.length === 0) return;
+            // If already using environment, skip
+            if (tracks[0].getSettings && tracks[0].getSettings().facingMode === 'environment') return;
+
+            // Stop current tracks and request back camera
+            tracks.forEach(function(t) { t.stop(); });
+            navigator.mediaDevices.getUserMedia({
+                video: { facingMode: { exact: 'environment' } },
+                audio: false
+            }).then(function(stream) {
+                if (v && v.isConnected) v.srcObject = stream;
+            }).catch(function() {
+                // Fallback: just 'environment' without exact
+                navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                }).then(function(stream) {
+                    if (v && v.isConnected) v.srcObject = stream;
+                }).catch(function() {});
+            });
+        });
+    }
+
+    // Run immediately and on DOM changes
+    forceBackCamera();
+    setInterval(forceBackCamera, 2000);
+    new MutationObserver(forceBackCamera).observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+"""
 
 # ══════════════════════════════════════════════════════
 # PAGE CONFIG
 # ══════════════════════════════════════════════════════
 st.set_page_config(page_title="SKU Pipeline", page_icon="🏪", layout="wide", initial_sidebar_state="expanded")
+
+# ══════════════════════════════════════════════════════
+# Inject camera forcing JS ONCE
+# ══════════════════════════════════════════════════════
+st.markdown(CAMERA_FORCE_JS, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
 # CSS
@@ -468,9 +404,7 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
 
 /* ═══════ SIDEBAR ═══════ */
 [data-testid="stSidebar"]{
-  background:var(--surface)!important;
-  border-right:1px solid var(--border)!important;
-  box-shadow:2px 0 12px rgba(0,0,0,.04)!important;
+  background:var(--surface)!important;border-right:1px solid var(--border)!important;box-shadow:2px 0 12px rgba(0,0,0,.04)!important;
 }
 [data-testid="stSidebar"] *{color:var(--text)!important;}
 [data-testid="stSidebar"] label{color:var(--text-muted)!important;}
@@ -478,72 +412,35 @@ html,body,.stApp,section.main,.stMarkdown,.element-container,
 [data-testid="stSidebar"]::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:3px;}
 [data-testid="stSidebar"] [data-baseweb="slider-track"]{background:var(--surface-3)!important;}
 [data-testid="stSidebar"] [data-baseweb="slider-track-fill"]{background:var(--blue)!important;}
-[data-testid="stSidebar"] [role="slider"]{
-  background:var(--blue)!important;border:none!important;
-  box-shadow:0 0 0 4px rgba(108,99,255,.18)!important;
-}
+[data-testid="stSidebar"] [role="slider"]{background:var(--blue)!important;border:none!important;box-shadow:0 0 0 4px rgba(108,99,255,.18)!important;}
 
 /* ═══════ TABS ═══════ */
-.stTabs [data-baseweb="tab-list"]{
-  background:var(--surface)!important;border:1px solid var(--border)!important;
-  border-radius:var(--r)!important;padding:4px!important;gap:2px!important;
-  width:fit-content!important;box-shadow:var(--sh)!important;
-}
-.stTabs [data-baseweb="tab"]{
-  background:transparent!important;border:none!important;border-radius:var(--r-sm)!important;
-  padding:7px 18px!important;font-family:var(--font)!important;font-size:13px!important;
-  font-weight:500!important;color:var(--text-muted)!important;transition:all .15s!important;
-}
-.stTabs [aria-selected="true"]{
-  background:linear-gradient(135deg,var(--blue),var(--blue-dark))!important;color:#fff!important;box-shadow:var(--sh-blue)!important;
-}
+.stTabs [data-baseweb="tab-list"]{background:var(--surface)!important;border:1px solid var(--border)!important;border-radius:var(--r)!important;padding:4px!important;gap:2px!important;width:fit-content!important;box-shadow:var(--sh)!important;}
+.stTabs [data-baseweb="tab"]{background:transparent!important;border:none!important;border-radius:var(--r-sm)!important;padding:7px 18px!important;font-size:13px!important;font-weight:500!important;color:var(--text-muted)!important;transition:all .15s!important;}
+.stTabs [aria-selected="true"]{background:linear-gradient(135deg,var(--blue),var(--blue-dark))!important;color:#fff!important;box-shadow:var(--sh-blue)!important;}
 .stTabs [aria-selected="false"]:hover{background:var(--surface-2)!important;color:var(--text-2)!important;}
 .stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none!important;}
 
 /* ═══════ BUTTONS ═══════ */
-.stButton>button{
-  font-family:var(--font)!important;font-size:12px!important;font-weight:600!important;
-  border-radius:var(--r-sm)!important;padding:7px 14px!important;border:none!important;
-  transition:all .15s!important;outline:none!important;
-}
+.stButton>button{font-size:12px!important;font-weight:600!important;border-radius:var(--r-sm)!important;padding:7px 14px!important;border:none!important;transition:all .15s!important;}
 .stButton>button:hover{opacity:.9!important;transform:translateY(-1px)!important;}
-[data-testid="baseButton-primary"]{
-  background:linear-gradient(135deg,var(--blue),var(--blue-dark))!important;color:#fff!important;box-shadow:var(--sh-blue)!important;
-}
-[data-testid="baseButton-secondary"]{
-  background:var(--surface)!important;color:var(--text-2)!important;
-  border:1px solid var(--border-2)!important;box-shadow:var(--sh)!important;
-}
+[data-testid="baseButton-primary"]{background:linear-gradient(135deg,var(--blue),var(--blue-dark))!important;color:#fff!important;box-shadow:var(--sh-blue)!important;}
+[data-testid="baseButton-secondary"]{background:var(--surface)!important;color:var(--text-2)!important;border:1px solid var(--border-2)!important;box-shadow:var(--sh)!important;}
 
-[data-testid="stDownloadButton"]>button{
-  font-family:var(--font)!important;font-size:12px!important;font-weight:600!important;
-  background:var(--surface)!important;color:var(--text-2)!important;
-  border:1px solid var(--border-2)!important;border-radius:var(--r-sm)!important;
-  padding:8px 14px!important;box-shadow:var(--sh)!important;transition:all .15s!important;
-}
-[data-testid="stDownloadButton"]>button:hover{background:var(--surface-2)!important;transform:translateY(-1px)!important;}
+[data-testid="stDownloadButton"]>button{font-size:12px!important;font-weight:600!important;background:var(--surface)!important;color:var(--text-2)!important;border:1px solid var(--border-2)!important;border-radius:var(--r-sm)!important;padding:8px 14px!important;box-shadow:var(--sh)!important;}
 
 /* ═══════ UPLOAD ═══════ */
-[data-testid="stFileUploaderDropzone"]{
-  border:2px dashed var(--border-2)!important;border-radius:var(--r-lg)!important;
-  padding:36px 28px!important;background:var(--surface)!important;
-  box-shadow:var(--sh)!important;transition:all .2s!important;
-}
-[data-testid="stFileUploaderDropzone"]:hover{
-  border-color:var(--blue)!important;
-  box-shadow:0 0 0 3px var(--blue-border),var(--sh)!important;
-}
+[data-testid="stFileUploaderDropzone"]{border:2px dashed var(--border-2)!important;border-radius:var(--r-lg)!important;padding:32px 24px!important;background:var(--surface)!important;box-shadow:var(--sh)!important;}
+[data-testid="stFileUploaderDropzone"]:hover{border-color:var(--blue)!important;box-shadow:0 0 0 3px var(--blue-border),var(--sh)!important;}
 [data-testid="stFileUploaderDropzone"] small{display:none!important;}
 
 /* ═══════ CAMERA ═══════ */
-[data-testid="stCameraInput"] video,
-[data-testid="stCameraInput"] img{border-radius:var(--r)!important;}
+[data-testid="stCameraInput"] video,[data-testid="stCameraInput"] img{border-radius:var(--r)!important;}
 [data-testid="stCameraInput"] label{display:none!important;}
 
 /* ═══════ PROGRESS ═══════ */
 [data-testid="stProgressBar"]>div>div{background:var(--blue)!important;border-radius:4px!important;}
-
-hr{border:none!important;border-top:1px solid var(--border)!important;margin:16px 0!important;}
+hr{border:none!important;border-top:1px solid var(--border)!important;margin:14px 0!important;}
 
 /* ═══════ SIDEBAR WIDGETS ═══════ */
 .sb-logo{display:flex;align-items:center;gap:12px;padding:16px 14px 14px;border-bottom:1px solid var(--border);margin-bottom:4px;}
@@ -566,8 +463,7 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:16p
 .s-ok{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);color:#10B981!important;}
 .s-err{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#EF4444!important;}
 .status-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
-.s-ok .status-dot{background:#10B981;}
-.s-err .status-dot{background:#EF4444;}
+.s-ok .status-dot{background:#10B981;}.s-err .status-dot{background:#EF4444;}
 
 /* ═══════ PAGE HEADER ═══════ */
 .page-header{padding:4px 0 14px;border-bottom:1px solid var(--border);margin-bottom:16px;}
@@ -579,11 +475,8 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:16p
 .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px 10px;box-shadow:var(--sh);text-align:center;}
 .metric-val{font-size:22px;font-weight:800;font-family:var(--font-mono);}
 .metric-lbl{font-size:9px;color:var(--text-muted);margin-top:2px;letter-spacing:.06em;text-transform:uppercase;}
-.metric-total .metric-val{color:var(--text);}
-.metric-high  .metric-val{color:var(--green);}
-.metric-med   .metric-val{color:var(--amber);}
-.metric-low   .metric-val{color:var(--orange);}
-.metric-vlow  .metric-val{color:var(--red);}
+.metric-total .metric-val{color:var(--text);}.metric-high .metric-val{color:var(--green);}
+.metric-med .metric-val{color:var(--amber);}.metric-low .metric-val{color:var(--orange);}.metric-vlow .metric-val{color:var(--red);}
 
 /* ═══════ DETECTION CARDS ═══════ */
 .detections-section{margin-bottom:18px;}
@@ -600,12 +493,9 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:16p
 .det-name{font-size:12px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px;}
 .det-pills{display:flex;gap:4px;flex-wrap:wrap;}
 .pill{padding:2px 6px;border-radius:4px;font-size:9px;font-weight:600;font-family:var(--font-mono);}
-.pill-f{background:rgba(245,158,11,.1);color:var(--amber);}
-.pill-s{background:rgba(108,99,255,.08);color:var(--blue);}
-.pill-b{background:rgba(16,185,129,.08);color:var(--green);}
+.pill-f{background:rgba(245,158,11,.1);color:var(--amber);}.pill-s{background:rgba(108,99,255,.08);color:var(--blue);}.pill-b{background:rgba(16,185,129,.08);color:var(--green);}
 .det-pct{font-family:var(--font-mono);font-size:15px;font-weight:800;flex-shrink:0;}
-.ch .det-pct{color:var(--green);}.cm .det-pct{color:var(--amber);}
-.cl .det-pct{color:var(--orange);}.cv .det-pct{color:var(--red);}
+.ch .det-pct{color:var(--green);}.cm .det-pct{color:var(--amber);}.cl .det-pct{color:var(--orange);}.cv .det-pct{color:var(--red);}
 .det-chevron{color:var(--text-subtle);font-size:9px;transition:transform .2s;flex-shrink:0;width:14px;}
 .det-card.open .det-chevron{transform:rotate(90deg);}
 .det-expand{display:none;padding:0 14px 14px;border-top:1px solid var(--border);}
@@ -622,12 +512,9 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:16p
 .conf-bar-fill{height:100%;border-radius:2px;}
 .ch .conf-bar-fill{background:var(--green);}.cm .conf-bar-fill{background:var(--amber);}
 .cl .conf-bar-fill{background:var(--orange);}.cv .conf-bar-fill{background:var(--red);}
-.top5{margin-top:8px;}
-.top5-title{font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:4px;}
+.top5{margin-top:8px;}.top5-title{font-size:10px;font-weight:700;color:var(--text-muted);margin-bottom:4px;}
 .top5-item{display:flex;align-items:center;gap:6px;font-size:10px;font-family:var(--font-mono);padding:2px 0;}
-.top5-i{color:var(--text-subtle);width:12px;}
-.top5-s{flex:1;color:var(--blue);}
-.top5-c{color:var(--text-muted);}
+.top5-i{color:var(--text-subtle);width:12px;}.top5-s{flex:1;color:var(--blue);}.top5-c{color:var(--text-muted);}
 
 /* ═══════ TABLE ═══════ */
 .tbl-section{margin-top:20px;}
@@ -635,10 +522,8 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:16p
 .tbl-wrap table{width:100%;border-collapse:collapse;font-size:11px;min-width:720px;}
 .tbl-wrap th{padding:8px 12px;text-align:left;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);background:var(--surface-2);border-bottom:1px solid var(--border);position:sticky;top:0;white-space:nowrap;}
 .tbl-wrap td{padding:7px 12px;border-bottom:1px solid rgba(226,230,239,.5);font-family:var(--font-mono);color:var(--text-muted);white-space:nowrap;}
-.tbl-wrap tr:last-child td{border-bottom:none;}
-.tbl-wrap tr:hover td{background:var(--blue-light);}
-.td-name{color:var(--text)!important;font-family:var(--font)!important;font-size:11px!important;font-weight:700!important;}
-.td-sku{color:var(--blue)!important;}
+.tbl-wrap tr:last-child td{border-bottom:none;}.tbl-wrap tr:hover td{background:var(--blue-light);}
+.td-name{color:var(--text)!important;font-family:var(--font)!important;font-size:11px!important;font-weight:700!important;}.td-sku{color:var(--blue)!important;}
 
 /* ═══════ INVENTORY ═══════ */
 .inv-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:10px;box-shadow:var(--sh);transition:all .15s;margin-bottom:8px;}
@@ -653,28 +538,18 @@ hr{border:none!important;border-top:1px solid var(--border)!important;margin:16p
 .cam-placeholder{background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r);width:100%;max-width:640px;height:180px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text-subtle);margin:0 auto 14px;gap:4px;}
 .cam-placeholder-title{font-size:13px;font-weight:500;color:var(--text-muted);}
 
-/* ═══════ EMPTY ═══════ */
 .empty-state{padding:36px 24px;text-align:center;background:var(--surface);border:1.5px dashed var(--border-2);border-radius:var(--r-lg);}
-.empty-title{font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:4px;}
-.empty-sub{font-size:11px;color:var(--text-muted);}
+.empty-title{font-size:13px;font-weight:600;color:var(--text-2);margin-bottom:4px;}.empty-sub{font-size:11px;color:var(--text-muted);}
 
-.active-session-btn button{border:2px solid var(--blue)!important;box-shadow:var(--sh-blue)!important;}
-
-@media(max-width:860px){
-  .metrics-row{grid-template-columns:repeat(3,1fr);}
-  .det-expand-inner{grid-template-columns:1fr;}
-}
+@media(max-width:860px){.metrics-row{grid-template-columns:repeat(3,1fr);}.det-expand-inner{grid-template-columns:1fr;}}
 </style>""", unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
 # SESSION STATE
 # ══════════════════════════════════════════════════════
-for k,v in {
-    'sessions':[],'active_sess_id':None,'proc_hashes':set(),
-    'upload_key':0,'cam_active':False,
-    'inv_pending':[],'inv_validated':[],'inv_next_id':1,
-    'inv_upload_key':0,'inv_cam_active':False,
-}.items():
+for k,v in {'sessions':[],'active_sess_id':None,'proc_hashes':set(),'upload_key':0,
+            'cam_active':False,'inv_pending':[],'inv_validated':[],'inv_next_id':1,
+            'inv_upload_key':0,'inv_cam_active':False}.items():
     if k not in st.session_state: st.session_state[k]=v
 
 # ══════════════════════════════════════════════════════
@@ -692,24 +567,20 @@ except:pass
 # SIDEBAR
 # ══════════════════════════════════════════════════════
 with st.sidebar:
-    st.markdown(f"""
-    <div class="sb-logo">
-      <div class="sb-logo-mark"><span style="font-size:18px;color:#fff;">🏪</span></div>
-      <div><div class="sb-logo-title">SKU Pipeline</div><div class="sb-logo-sub">YOLO · MobileNetV3</div></div>
-    </div>
+    st.markdown(f"""<div class="sb-logo"><div class="sb-logo-mark"><span style="font-size:18px;color:#fff;">🏪</span></div><div><div class="sb-logo-title">SKU Pipeline</div><div class="sb-logo-sub">YOLO · MobileNetV3</div></div></div>
     <div class="status-pill {'s-ok' if models_ok else 's-err'}"><div class="status-dot"></div>{'Prêt · '+str(num_classes)+' SKU' if models_ok else 'Erreur chargement'}</div>
-    <hr class="sb-divider">
-    <div class="sb-section">⚙ Seuils</div>""",unsafe_allow_html=True)
-
-    conf_threshold = st.slider("Seuil YOLO",0.10,0.95,0.45,0.05)
-    display_threshold = st.slider("Seuil affichage",0.10,0.95,0.25,0.05)
-    upscale_factor = st.slider("Agrandissement",1.0,4.0,2.5,0.5)
-
+    <hr class="sb-divider"><div class="sb-section">⚙ Seuils</div>""",unsafe_allow_html=True)
+    conf_threshold=st.slider("Seuil YOLO",0.10,0.95,0.45,0.05)
+    display_threshold=st.slider("Seuil affichage",0.10,0.95,0.25,0.05)
+    upscale_factor=st.slider("Agrandissement",1.0,4.0,2.5,0.5)
     st.markdown("""<hr class="sb-divider"><div class="sb-section">📊 Pipeline</div>
-    <div class="sb-pipeline">
-      <div class="sb-stage"><div class="sb-stage-num">1</div><div><div class="sb-stage-text">YOLO</div><div class="sb-stage-sub">Détection famille</div></div></div>
-      <div class="sb-stage" style="margin-top:4px;"><div class="sb-stage-num">2</div><div><div class="sb-stage-text">MobileNetV3</div><div class="sb-stage-sub">Classification SKU</div></div></div>
-    </div>""",unsafe_allow_html=True)
+    <div class="sb-pipeline"><div class="sb-stage"><div class="sb-stage-num">1</div><div><div class="sb-stage-text">YOLO</div><div class="sb-stage-sub">Détection famille</div></div></div>
+    <div class="sb-stage" style="margin-top:4px;"><div class="sb-stage-num">2</div><div><div class="sb-stage-text">MobileNetV3</div><div class="sb-stage-sub">Classification SKU</div></div></div></div>
+    <hr class="sb-divider"><div class="sb-section">📁 Modèles</div>
+    <div class="sb-files"><div class="sb-file-row"><span class="sb-file-key">YOLO</span><span class="sb-file-val">{YOLO_MODEL_PATH}</span></div>
+    <div class="sb-file-row"><span class="sb-file-key">SKU</span><span class="sb-file-val">{SKU_MODEL_PATH}</span></div>
+    <div class="sb-file-row"><span class="sb-file-key">Labels</span><span class="sb-file-val">{MAPPING_PATH}</span></div>
+    <div class="sb-file-row"><span class="sb-file-key">Catalog</span><span class="sb-file-val">{CSV_PATH}</span></div></div>""",unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════
 # PAGE HEADER
@@ -724,79 +595,56 @@ tab_up,tab_cam,tab_inv=st.tabs(["📸 Upload","📷 Caméra","📦 Inventaire"])
 # ╔══════════════════════ UPLOAD ═══════════════════════
 with tab_up:
     uploaded=st.file_uploader("Déposez une image de rayon · JPG, JPEG ou PNG",type=["jpg","jpeg","png"],key=f"main_up_{st.session_state.upload_key}")
-
     if uploaded and models_ok:
-        raw=uploaded.getvalue()
-        hh=hashlib.md5(raw[:2048]+uploaded.name.encode()).hexdigest()
+        raw=uploaded.getvalue();hh=hashlib.md5(raw[:2048]+uploaded.name.encode()).hexdigest()
         if hh not in st.session_state.proc_hashes:
             with st.spinner("Analyse en cours..."):
                 ann,dets,crops=run_pipeline(raw,yolo_model,sku_model,idx_to_class,sku_catalog,conf_threshold,upscale_factor,display_threshold)
             st.session_state.sessions.append({'id':len(st.session_state.sessions)+1,'name':uploaded.name[:22],'raw':raw,'ann':ann,'dets':dets,'crops':crops})
-            st.session_state.active_sess_id=st.session_state.sessions[-1]['id']
-            st.session_state.proc_hashes.add(hh)
-            st.session_state.upload_key+=1
-            st.rerun()
+            st.session_state.active_sess_id=st.session_state.sessions[-1]['id'];st.session_state.proc_hashes.add(hh)
+            st.session_state.upload_key+=1;st.rerun()
 
-    # Session nav
     if st.session_state.sessions:
-        n=min(len(st.session_state.sessions),8)
-        cols=st.columns(n+1 if n<8 else 9)
-        to_remove=None
+        n=min(len(st.session_state.sessions),8);cols=st.columns(n+1 if n<8 else 9);to_remove=None
         for i,sess in enumerate(st.session_state.sessions[:n]):
             active=sess['id']==st.session_state.active_sess_id
             with cols[i]:
                 if st.button(f"📷 {sess['name']}",key=f"sn_{sess['id']}",type="primary" if active else "secondary",use_container_width=True):
                     st.session_state.active_sess_id=sess['id'];st.rerun()
-
-        # Remove buttons in a row below
         rm_cols=st.columns(n)
         for i,sess in enumerate(st.session_state.sessions[:n]):
             with rm_cols[i]:
                 if st.button("✕",key=f"rm_{sess['id']}",use_container_width=True):to_remove=sess['id']
-
         if to_remove:
             st.session_state.sessions=[s for s in st.session_state.sessions if s['id']!=to_remove]
-            st.session_state.active_sess_id=st.session_state.sessions[-1]['id'] if st.session_state.sessions else None
-            st.rerun()
+            st.session_state.active_sess_id=st.session_state.sessions[-1]['id'] if st.session_state.sessions else None;st.rerun()
 
         active_sess=next((s for s in st.session_state.sessions if s['id']==st.session_state.active_sess_id),None)
         if active_sess:
-            # ── Annotated image with clickable bboxes ──
             html_content=render_annotated_image_with_modal(active_sess['raw'],active_sess['ann'],active_sess['crops'],active_sess['dets'])
-            st_html(html_content,height=500 if active_sess['ann'].shape[0]<400 else 650,scrolling=False)
-
-            # ── Metrics ──
+            st_html(html_content,height=max(480,active_sess['ann'].shape[0]//2+200),scrolling=False)
             cd=active_sess['crops']
-            hi=sum(1 for c in cd if c['stage2_conf']>0.7)
-            me=sum(1 for c in cd if 0.4<c['stage2_conf']<=0.7)
-            lo=sum(1 for c in cd if 0.2<c['stage2_conf']<=0.4)
-            vl=sum(1 for c in cd if c['stage2_conf']<=0.2)
+            hi=sum(1 for c in cd if c['stage2_conf']>0.7);me=sum(1 for c in cd if 0.4<c['stage2_conf']<=0.7)
+            lo=sum(1 for c in cd if 0.2<c['stage2_conf']<=0.4);vl=sum(1 for c in cd if c['stage2_conf']<=0.2)
             st.markdown(render_metrics(len(cd),hi,me,lo,vl),unsafe_allow_html=True)
-
-            # ── Detection cards ──
             sorted_crops=sorted(cd,key=lambda x:x['stage2_conf'],reverse=True)
             cards="".join(render_detection_card(c) for c in sorted_crops)
             st.markdown(f'<div class="detections-section"><div class="section-title">🔍 Détections <span>· {len(cd)} produit{"s" if len(cd)!=1 else ""}</span></div><div class="detections-stack">{cards}</div></div>',unsafe_allow_html=True)
-
-            # ── Table ──
             rows=""
             for d in active_sess['dets']:
                 col="var(--green)" if d['confiance_sku']>0.7 else "var(--amber)" if d['confiance_sku']>0.4 else "var(--red)"
                 rows+=f'<tr><td class="td-name">{d["nom_produit"]}</td><td>{d["brand"]}</td><td>{d["capacity"]}</td><td>{d["emballage"]}</td><td>{d["saveur"]}</td><td>{d["famille"]}</td><td style="color:{col};font-weight:700">{d["confiance_sku"]:.1%}</td><td>{d["confiance_detection"]:.1%}</td><td class="td-sku">{d["sku"]}</td></tr>'
             st.markdown(f'<div class="tbl-section"><div class="section-title">📋 Rapport complet</div><div class="tbl-wrap"><table><thead><tr><th>Produit</th><th>Marque</th><th>Capacité</th><th>Emballage</th><th>Saveur</th><th>Famille</th><th>Conf.SKU</th><th>Conf.Dét.</th><th>SKU ID</th></tr></thead><tbody>{rows}</tbody></table></div></div>',unsafe_allow_html=True)
-
-            # ── Export ──
-            ts=datetime.now().strftime('%Y%m%d_%H%M%S')
-            df=pd.DataFrame(active_sess['dets'])
+            ts=datetime.now().strftime('%Y%m%d_%H%M%S');df=pd.DataFrame(active_sess['dets'])
             ec1,ec2=st.columns(2)
             ec1.download_button("📥 CSV",df.to_csv(index=False),f"detections_{ts}.csv","text/csv",use_container_width=True)
             ec2.download_button("📥 JSON",json.dumps(active_sess['dets'],indent=2,ensure_ascii=False,default=str),f"detections_{ts}.json","application/json",use_container_width=True)
 
-# ╔══════════════════════ CAMERA ═══════════════════════
+# ╔══════════════════════ CAMERA (arrière forcée) ═══════════════════════
 with tab_cam:
     st.markdown('<div class="cam-wrap">',unsafe_allow_html=True)
     if not st.session_state.cam_active:
-        st.markdown('<div class="cam-placeholder"><div class="cam-placeholder-title">📱 Appareil photo (caméra arrière)</div><div class="cam-placeholder-sub">Cliquez sur Démarrer</div></div>',unsafe_allow_html=True)
+        st.markdown('<div class="cam-placeholder"><div class="cam-placeholder-title">📱 Caméra arrière</div><div class="cam-placeholder-sub">Cliquez sur Démarrer</div></div>',unsafe_allow_html=True)
         c1,_,_=st.columns([1,1,1])
         with c1:
             if st.button("▶ Démarrer",key="cam_start",type="primary",use_container_width=True):
@@ -804,33 +652,28 @@ with tab_cam:
     else:
         cam_img=st.camera_input("",key="cam_input",label_visibility="collapsed")
         c1,c2,c3=st.columns([1,1,1])
-        with c1:st.button("▶ Démarrer",key="cam_s2",disabled=True,use_container_width=True)
+        with c1:st.button("▶",key="cam_s2",disabled=True,use_container_width=True)
         with c2:
-            if cam_img and st.button("📸 Capturer & analyser",key="cam_use",type="primary",use_container_width=True):
+            if cam_img and st.button("📸 Capturer",key="cam_use",type="primary",use_container_width=True):
                 raw=cam_img.getvalue()
                 with st.spinner("Analyse..."):
                     ann,dets,crops=run_pipeline(raw,yolo_model,sku_model,idx_to_class,sku_catalog,conf_threshold,upscale_factor,display_threshold)
-                st.session_state.cam_result={'raw':raw,'ann':ann,'dets':dets,'crops':crops}
-                st.session_state.cam_active=False;st.rerun()
+                st.session_state.cam_result={'raw':raw,'ann':ann,'dets':dets,'crops':crops};st.session_state.cam_active=False;st.rerun()
         with c3:
-            if st.button("⏹ Arrêter",key="cam_stop",type="secondary",use_container_width=True):
-                st.session_state.cam_active=False;st.rerun()
+            if st.button("⏹",key="cam_stop",type="secondary",use_container_width=True):st.session_state.cam_active=False;st.rerun()
     st.markdown('</div>',unsafe_allow_html=True)
 
     if 'cam_result' in st.session_state and st.session_state.cam_result:
         r=st.session_state.cam_result
         html_content=render_annotated_image_with_modal(r['raw'],r['ann'],r['crops'],r['dets'])
-        st_html(html_content,height=500 if r['ann'].shape[0]<400 else 650,scrolling=False)
-        hi=sum(1 for c in r['crops'] if c['stage2_conf']>0.7)
-        me=sum(1 for c in r['crops'] if 0.4<c['stage2_conf']<=0.7)
-        lo=sum(1 for c in r['crops'] if 0.2<c['stage2_conf']<=0.4)
-        vl=sum(1 for c in r['crops'] if c['stage2_conf']<=0.2)
+        st_html(html_content,height=max(480,r['ann'].shape[0]//2+200),scrolling=False)
+        hi=sum(1 for c in r['crops'] if c['stage2_conf']>0.7);me=sum(1 for c in r['crops'] if 0.4<c['stage2_conf']<=0.7)
+        lo=sum(1 for c in r['crops'] if 0.2<c['stage2_conf']<=0.4);vl=sum(1 for c in r['crops'] if c['stage2_conf']<=0.2)
         st.markdown(render_metrics(len(r['crops']),hi,me,lo,vl),unsafe_allow_html=True)
         sorted_crops=sorted(r['crops'],key=lambda x:x['stage2_conf'],reverse=True)
         cards="".join(render_detection_card(c) for c in sorted_crops)
         st.markdown(f'<div class="detections-section"><div class="section-title">🔍 Détections <span>· {len(r["crops"])} produit{"s" if len(r["crops"])!=1 else ""}</span></div><div class="detections-stack">{cards}</div></div>',unsafe_allow_html=True)
-        ts=datetime.now().strftime('%Y%m%d_%H%M%S')
-        df=pd.DataFrame(r['dets'])
+        ts=datetime.now().strftime('%Y%m%d_%H%M%S');df=pd.DataFrame(r['dets'])
         ec1,ec2=st.columns(2)
         ec1.download_button("📥 CSV",df.to_csv(index=False),f"photo_{ts}.csv","text/csv",use_container_width=True)
         ec2.download_button("📥 JSON",json.dumps(r['dets'],indent=2,ensure_ascii=False,default=str),f"photo_{ts}.json","application/json",use_container_width=True)
@@ -838,26 +681,22 @@ with tab_cam:
 # ╔══════════════════════ INVENTAIRE ═══════════════════
 with tab_inv:
     inv_up,inv_cam=st.tabs(["📁 Upload","📷 Caméra"])
-
     with inv_up:
         inv_files=st.file_uploader("Scannez un ou plusieurs produits",type=["jpg","jpeg","png"],accept_multiple_files=True,key=f"inv_up_{st.session_state.inv_upload_key}")
         if inv_files and models_ok:
             prog=st.progress(0)
             for i,f in enumerate(inv_files):
                 res=run_inventory_pipeline(f.read(),sku_model,idx_to_class,sku_catalog,upscale_factor)
-                res['id']=st.session_state.inv_next_id;st.session_state.inv_next_id+=1
-                st.session_state.inv_pending.append(res)
+                res['id']=st.session_state.inv_next_id;st.session_state.inv_next_id+=1;st.session_state.inv_pending.append(res)
                 prog.progress((i+1)/len(inv_files))
             prog.empty();st.session_state.inv_upload_key+=1;st.rerun()
-
     with inv_cam:
         st.markdown('<div class="cam-wrap">',unsafe_allow_html=True)
         if not st.session_state.inv_cam_active:
             st.markdown('<div class="cam-placeholder"><div class="cam-placeholder-title">📱 Caméra arrière</div><div class="cam-placeholder-sub">Scannez un produit</div></div>',unsafe_allow_html=True)
             ic1,_,_=st.columns([1,1,1])
             with ic1:
-                if st.button("▶ Démarrer",key="inv_cam_start",type="primary",use_container_width=True):
-                    st.session_state.inv_cam_active=True;st.rerun()
+                if st.button("▶ Démarrer",key="inv_cam_start",type="primary",use_container_width=True):st.session_state.inv_cam_active=True;st.rerun()
         else:
             inv_cam_img=st.camera_input("",key="inv_cam_input",label_visibility="collapsed")
             ic1,ic2,ic3=st.columns([1,1,1])
@@ -866,15 +705,12 @@ with tab_inv:
                 if inv_cam_img and st.button("📸 Capturer",key="inv_cam_use",type="primary",use_container_width=True):
                     with st.spinner("Classification..."):
                         res=run_inventory_pipeline(inv_cam_img.getvalue(),sku_model,idx_to_class,sku_catalog,upscale_factor)
-                        res['id']=st.session_state.inv_next_id;st.session_state.inv_next_id+=1
-                        st.session_state.inv_pending.append(res)
+                        res['id']=st.session_state.inv_next_id;st.session_state.inv_next_id+=1;st.session_state.inv_pending.append(res)
                     st.session_state.inv_cam_active=False;st.rerun()
             with ic3:
-                if st.button("⏹",key="inv_cam_stop",type="secondary",use_container_width=True):
-                    st.session_state.inv_cam_active=False;st.rerun()
+                if st.button("⏹",key="inv_cam_stop",type="secondary",use_container_width=True):st.session_state.inv_cam_active=False;st.rerun()
         st.markdown('</div>',unsafe_allow_html=True)
 
-    # Pending
     st.markdown('<hr>',unsafe_allow_html=True)
     pending=st.session_state.inv_pending
     if pending:
@@ -883,44 +719,37 @@ with tab_inv:
         with bh2:
             c1,c2=st.columns(2)
             with c1:
-                if st.button("➕ Tout",use_container_width=True,type="primary",key="add_all"):
-                    st.session_state.inv_validated.extend(pending);st.session_state.inv_pending=[];st.rerun()
+                if st.button("➕ Tout",use_container_width=True,type="primary",key="add_all"):st.session_state.inv_validated.extend(pending);st.session_state.inv_pending=[];st.rerun()
             with c2:
-                if st.button("🗑 Tout",use_container_width=True,key="del_all"):
-                    st.session_state.inv_pending=[];st.rerun()
-
+                if st.button("🗑 Tout",use_container_width=True,key="del_all"):st.session_state.inv_pending=[];st.rerun()
         to_add,to_del=[],[]
         for row_items in [pending[i:i+3] for i in range(0,len(pending),3)]:
             cols=st.columns(3)
             for col_el,item in zip(cols,row_items):
                 with col_el:
-                    st.markdown(render_inv_card(item),unsafe_allow_html=True)
-                    st.markdown('<div style="height:4px"></div>',unsafe_allow_html=True)
+                    st.markdown(render_inv_card(item),unsafe_allow_html=True);st.markdown('<div style="height:4px"></div>',unsafe_allow_html=True)
                     ba,bb=st.columns(2)
                     with ba:
                         if st.button("➕ Ajouter",key=f"ia_{item['id']}",use_container_width=True,type="primary"):to_add.append(item['id'])
                     with bb:
                         if st.button("✕",key=f"id_{item['id']}",use_container_width=True,type="secondary"):to_del.append(item['id'])
                     st.markdown('<div style="height:6px"></div>',unsafe_allow_html=True)
-
         if to_add:
             for iid in to_add:
                 obj=next((x for x in st.session_state.inv_pending if x['id']==iid),None)
-                if obj:st.session_state.inv_validated.append(obj);st.session_state.inv_pending=[x for x in st.session_state.inv_pending if x['id']!=iid]
-            st.rerun()
+                if obj:st.session_state.inv_validated.append(obj)
+            st.session_state.inv_pending=[x for x in st.session_state.inv_pending if x['id'] not in to_add];st.rerun()
         if to_del:
             st.session_state.inv_pending=[x for x in st.session_state.inv_pending if x['id'] not in to_del];st.rerun()
     else:
         st.markdown('<div class="empty-state"><div class="empty-title">Aucun produit en attente</div><div class="empty-sub">Uploadez des photos ou utilisez la caméra</div></div>',unsafe_allow_html=True)
 
-    # Validated
     st.markdown('<hr>',unsafe_allow_html=True)
     validated=st.session_state.inv_validated
     vh1,vh2=st.columns([6,2])
     with vh1:st.markdown(f'<div class="section-title">✅ Inventaire validé <span>· {len(validated)} produit{"s" if len(validated)!=1 else ""}</span></div>',unsafe_allow_html=True)
     with vh2:
         if validated and st.button("🗑 Effacer",use_container_width=True,key="clear_inv"):st.session_state.inv_validated=[];st.rerun()
-
     if validated:
         rows=""
         for it in validated:
